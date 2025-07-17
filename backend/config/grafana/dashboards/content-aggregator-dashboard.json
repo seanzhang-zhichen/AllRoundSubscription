@@ -1,0 +1,195 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Content Aggregator Dashboard",
+    "tags": ["content-aggregator"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Requests Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{endpoint}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests/sec"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "HTTP Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Seconds"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "System Resources",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "system_cpu_usage_percent",
+            "legendFormat": "CPU Usage %"
+          },
+          {
+            "expr": "system_memory_usage_percent",
+            "legendFormat": "Memory Usage %"
+          },
+          {
+            "expr": "system_disk_usage_percent",
+            "legendFormat": "Disk Usage %"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "max": 100,
+            "min": 0
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 4,
+        "title": "Database Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "db_connections_active",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "db_connections_idle",
+            "legendFormat": "Idle Connections"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Connections"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "Business Metrics",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "users_total",
+            "legendFormat": "Total Users"
+          },
+          {
+            "expr": "users_active_daily",
+            "legendFormat": "Daily Active Users"
+          },
+          {
+            "expr": "subscriptions_total",
+            "legendFormat": "Total Subscriptions"
+          },
+          {
+            "expr": "articles_total",
+            "legendFormat": "Total Articles"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        }
+      },
+      {
+        "id": 6,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(app_errors_total[5m])",
+            "legendFormat": "{{error_type}} errors/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Errors/sec"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 24
+        }
+      },
+      {
+        "id": 7,
+        "title": "Celery Tasks",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_total[5m])",
+            "legendFormat": "{{task_name}} - {{status}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Tasks/sec"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 24
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}
