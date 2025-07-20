@@ -7,8 +7,8 @@ from app.core.config import settings
 # 创建Celery应用
 celery_app = Celery(
     "content_aggregator",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=settings.celery_broker_url_with_auth,
+    backend=settings.celery_result_backend_with_auth,
     include=["app.tasks"]
 )
 

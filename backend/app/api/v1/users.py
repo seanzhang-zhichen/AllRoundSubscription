@@ -3,7 +3,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
+from app.core.logging import get_logger
 
 from app.db.database import get_db
 from app.services.user import user_service
@@ -15,7 +15,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import NotFoundException, BusinessException
 from app.models.user import User
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

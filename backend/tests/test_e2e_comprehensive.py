@@ -349,7 +349,7 @@ class TestE2EPushNotificationFlow:
         assert push_record is not None
         assert push_record.user_id == user.id
         assert push_record.article_id == new_article.id
-        assert push_record.status == PushStatus.SUCCESS
+        assert push_record.status == PushStatus.SUCCESS.value
         assert push_record.push_time is not None
     
     @pytest.mark.asyncio

@@ -21,7 +21,7 @@ class SearchCache:
             redis_client: Redis客户端，如果为None则创建新的连接
         """
         if redis_client is None:
-            self.redis = redis.from_url(settings.REDIS_URL)
+            self.redis = redis.from_url(settings.redis_url_with_auth)
         else:
             self.redis = redis_client
         

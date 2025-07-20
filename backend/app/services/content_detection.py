@@ -1,7 +1,7 @@
 """
 新内容检测服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ from app.db.redis import get_redis
 from app.core.exceptions import BusinessException
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ContentDetectionService:

@@ -29,11 +29,7 @@
         <button class="btn btn-outline btn-sm" @click="handleNavigateToSearch">
           <text class="btn-text">+ 添加订阅</text>
         </button>
-        <button 
-          v-if="subscriptions.length > 0" 
-          class="btn btn-outline btn-sm" 
-          @click="toggleBatchMode"
-        >
+        <button v-if="subscriptions.length > 0" class="btn btn-outline btn-sm" @click="toggleBatchMode">
           <text class="btn-text">{{ batchMode ? '取消' : '管理' }}</text>
         </button>
       </view>
@@ -49,37 +45,24 @@
       <!-- 订阅列表 -->
       <view v-if="subscriptions.length > 0" class="subscription-list">
         <!-- 按平台分组显示 -->
-        <view 
-          v-for="(platformSubs, platform) in subscriptionsByPlatform" 
-          :key="platform" 
-          class="platform-group"
-        >
+        <view v-for="(platformSubs, platform) in subscriptionsByPlatform" :key="platform" class="platform-group">
           <view class="platform-header">
             <text class="platform-name">{{ getPlatformName(platform) }}</text>
             <text class="platform-count">({{ platformSubs.length }})</text>
           </view>
-          
+
           <view class="subscription-items">
-            <view 
-              v-for="subscription in platformSubs" 
-              :key="subscription.id"
-              class="subscription-item"
-              @click="handleItemClick(subscription)"
-            >
+            <view v-for="subscription in platformSubs" :key="subscription.id" class="subscription-item"
+              @click="handleItemClick(subscription)">
               <!-- 批量选择模式的复选框 -->
               <view v-if="batchMode" class="checkbox-container">
-                <checkbox 
-                  :checked="selectedSubscriptions.includes(subscription.id)"
-                  @click.stop="toggleSelection(subscription.id)"
-                />
+                <checkbox :checked="selectedSubscriptions.includes(subscription.id)"
+                  @click.stop="toggleSelection(subscription.id)" />
               </view>
 
               <!-- 博主头像 -->
-              <image 
-                class="avatar" 
-                :src="subscription.account.avatar_url || '/static/default-avatar.png'"
-                mode="aspectFill"
-              />
+              <image class="avatar" :src="subscription.account.avatar_url || '/static/default-avatar.png'"
+                mode="aspectFill" />
 
               <!-- 博主信息 -->
               <view class="account-info">
@@ -95,10 +78,7 @@
 
               <!-- 操作按钮 -->
               <view v-if="!batchMode" class="action-buttons">
-                <button 
-                  class="btn btn-danger btn-sm" 
-                  @click.stop="handleUnsubscribe(subscription)"
-                >
+                <button class="btn btn-danger btn-sm" @click.stop="handleUnsubscribe(subscription)">
                   <text class="btn-text">取消订阅</text>
                 </button>
               </view>
@@ -108,25 +88,15 @@
 
         <!-- 加载更多 -->
         <view v-if="hasMore" class="load-more">
-          <button 
-            class="btn btn-outline btn-sm" 
-            @click="loadMore"
-            :disabled="loading"
-          >
+          <button class="btn btn-outline btn-sm" @click="loadMore" :disabled="loading">
             <text class="btn-text">{{ loading ? '加载中...' : '加载更多' }}</text>
           </button>
         </view>
       </view>
 
       <!-- 空状态 -->
-      <Empty 
-        v-else
-        icon="subscription"
-        text="还没有订阅任何博主"
-        :show-action="true"
-        action-text="去搜索博主"
-        @action="handleNavigateToSearch"
-      />
+      <Empty v-else icon="subscription" text="还没有订阅任何博主" :show-action="true" action-text="去搜索博主"
+        @action="handleNavigateToSearch" />
     </view>
 
     <!-- 会员升级弹窗 -->
@@ -136,7 +106,7 @@
           <text class="upgrade-title">升级会员</text>
           <text class="close-btn" @click="hideUpgradeModal">×</text>
         </view>
-        
+
         <view class="membership-options">
           <view class="membership-option" @click="upgradeMembership('basic')">
             <view class="option-header">
@@ -148,7 +118,7 @@
               <text class="benefit-item">• 推送次数：20次/天</text>
             </view>
           </view>
-          
+
           <view class="membership-option premium" @click="upgradeMembership('premium')">
             <view class="option-header">
               <text class="option-title">高级会员</text>
@@ -167,7 +137,8 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onPullDownRefresh } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { onPullDownRefresh } from '@dcloudio/uni-app'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useUserStore } from '@/stores/user'
 import Loading from '@/components/Loading.vue'
@@ -389,7 +360,7 @@ export default {
       batchMode,
       selectedSubscriptions,
       showUpgrade,
-      
+
       // 方法
       retry,
       loadMore,
@@ -404,7 +375,7 @@ export default {
       upgradeMembership,
       getPlatformName,
       formatFollowerCount,
-      
+
       // 计算属性
       canRetry: pageState.canRetry
     }
@@ -792,23 +763,23 @@ export default {
     flex-direction: column;
     gap: 15rpx;
   }
-  
+
   .batch-actions {
     flex-direction: column;
     gap: 15rpx;
     text-align: center;
   }
-  
+
   .subscription-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 15rpx;
   }
-  
+
   .account-info {
     width: 100%;
   }
-  
+
   .action-buttons {
     margin-left: 0;
     width: 100%;

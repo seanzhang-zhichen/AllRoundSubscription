@@ -2,12 +2,12 @@
 性能优化配置
 """
 import psutil
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

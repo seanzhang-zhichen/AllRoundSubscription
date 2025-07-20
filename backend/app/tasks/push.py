@@ -5,10 +5,10 @@ from celery import shared_task
 from app.tasks.base import BaseTask
 from app.services.push_queue import push_queue_service
 from app.db.database import AsyncSessionLocal
-import logging
+from app.core.logging import get_logger
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def _process_push_queue_async():
@@ -46,7 +46,7 @@ async def _process_push_queue_async():
         }
         
     except Exception as e:
-        logger.error(f"异步处理推送队列失败: {str(e)}")
+        logger.error(f"异步处理推送队列失败: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": str(e),
@@ -94,7 +94,7 @@ async def _get_queue_stats_async():
     try:
         return await push_queue_service.get_queue_statistics()
     except Exception as e:
-        logger.error(f"异步获取队列统计失败: {str(e)}")
+        logger.error(f"异步获取队列统计失败: {str(e)}", exc_info=True)
         return {"status": "error", "error": str(e)}
 
 
@@ -114,7 +114,7 @@ def get_push_queue_statistics(self):
         }
         
     except Exception as exc:
-        logger.error(f"获取推送队列统计失败: {str(exc)}")
+        logger.error(f"获取推送队列统计失败: {str(exc)}", exc_info=True)
         return {
             "status": "failed",
             "message": f"获取队列统计失败: {str(exc)}",
@@ -127,7 +127,7 @@ async def _retry_failed_items_async(max_items: int = 10):
     try:
         return await push_queue_service.retry_failed_items(max_items)
     except Exception as e:
-        logger.error(f"异步重试失败项目失败: {str(e)}")
+        logger.error(f"异步重试失败项目失败: {str(e)}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
@@ -155,7 +155,7 @@ def retry_failed_push_items(self, max_items: int = 10):
             }
             
     except Exception as exc:
-        logger.error(f"重试失败项目任务失败: {str(exc)}")
+        logger.error(f"重试失败项目任务失败: {str(exc)}", exc_info=True)
         return {
             "status": "failed",
             "message": f"任务执行失败: {str(exc)}",

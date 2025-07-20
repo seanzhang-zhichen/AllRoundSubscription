@@ -1,19 +1,19 @@
 """
 认证服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-
+from datetime import timedelta
 from app.models.user import User, MembershipLevel
 from app.services.wechat import wechat_service
 from app.core.security import jwt_manager
 from app.core.exceptions import AuthenticationException, BusinessException
 from app.db.redis import cache_service
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AuthService:
@@ -31,7 +31,13 @@ class AuthService:
             包含用户信息和令牌的字典
         """
         try:
-            # 1. 通过code换取openid
+            # 1. 验证code格式
+            if not code or len(code.strip()) == 0:
+                raise BusinessException("登录凭证不能为空")
+            
+            code = code.strip()  # 清理可能的空白字符
+            
+            # 2. 通过code换取openid
             logger.info(f"开始微信登录流程，code: {code[:10]}...")
             wechat_data = await wechat_service.code_to_session(code)
             openid = wechat_data["openid"]
@@ -52,6 +58,9 @@ class AuthService:
             
             logger.info(f"用户登录成功，用户ID: {user.id}, openid: {openid[:10]}...")
             
+            # 计算token过期时间
+            expire_at = datetime.utcnow() + timedelta(minutes=jwt_manager.access_token_expire_minutes)
+            
             return {
                 "user": {
                     "id": user.id,
@@ -68,7 +77,8 @@ class AuthService:
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "token_type": "bearer",
-                    "expires_in": jwt_manager.access_token_expire_minutes * 60
+                    "expires_in": jwt_manager.access_token_expire_minutes * 60,
+                    "expire_at": expire_at.isoformat()
                 }
             }
             
@@ -105,12 +115,17 @@ class AuthService:
             token_data = {"sub": str(user.id), "openid": openid}
             new_access_token = jwt_manager.create_access_token(token_data)
             
+            # 计算新token过期时间
+            
+            expire_at = datetime.utcnow() + timedelta(minutes=jwt_manager.access_token_expire_minutes)
+            
             logger.info(f"令牌刷新成功，用户ID: {user_id}")
             
             return {
                 "access_token": new_access_token,
                 "token_type": "bearer",
-                "expires_in": jwt_manager.access_token_expire_minutes * 60
+                "expires_in": jwt_manager.access_token_expire_minutes * 60,
+                "expire_at": expire_at.isoformat()
             }
             
         except AuthenticationException:
@@ -168,7 +183,7 @@ class AuthService:
             logger.info(f"用户登出成功，用户ID: {user_id}")
             return True
         except Exception as e:
-            logger.error(f"用户登出失败: {str(e)}")
+            logger.error(f"用户登出失败: {str(e)}", exc_info=True)
             return False
     
     async def _get_or_create_user(self, db: AsyncSession, openid: str) -> User:
@@ -220,7 +235,7 @@ class AuthService:
             cache_key = f"user_session:{user_id}"
             await cache_service.set(cache_key, session_data, expire=3600 * 24)  # 24小时
         except Exception as e:
-            logger.warning(f"缓存用户会话失败: {str(e)}")
+            logger.warning(f"缓存用户会话失败: {str(e)}", exc_info=True)
     
     async def _clear_user_session(self, user_id: int) -> None:
         """清除用户会话缓存"""
@@ -228,7 +243,7 @@ class AuthService:
             cache_key = f"user_session:{user_id}"
             await cache_service.delete(cache_key)
         except Exception as e:
-            logger.warning(f"清除用户会话缓存失败: {str(e)}")
+            logger.warning(f"清除用户会话缓存失败: {str(e)}", exc_info=True)
 
 
 # 全局认证服务实例

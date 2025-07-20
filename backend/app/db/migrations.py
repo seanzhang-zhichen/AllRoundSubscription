@@ -9,9 +9,9 @@ from app.models.account import Account
 from app.models.article import Article
 from app.models.subscription import Subscription
 from app.models.push_record import PushRecord
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def create_tables():

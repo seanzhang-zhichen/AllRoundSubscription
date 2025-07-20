@@ -1,7 +1,7 @@
 """
 推送通知服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.services.wechat import wechat_service
 from app.services.limits import limits_service
 from app.core.exceptions import BusinessException, ErrorCode
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PushNotificationService:

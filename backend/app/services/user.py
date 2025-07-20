@@ -1,7 +1,7 @@
 """
 用户管理服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import Optional, Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
@@ -13,7 +13,7 @@ from app.models.push_record import PushRecord, PushStatus
 from app.core.exceptions import NotFoundException, BusinessException, ErrorCode
 from app.db.redis import cache_service
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UserService:
@@ -349,7 +349,7 @@ class UserService:
                 PushRecord.user_id == user_id,
                 PushRecord.push_time >= today,
                 PushRecord.push_time < tomorrow,
-                PushRecord.status == PushStatus.SUCCESS
+                PushRecord.status == PushStatus.SUCCESS.value
             )
         )
         result = await db.execute(stmt)

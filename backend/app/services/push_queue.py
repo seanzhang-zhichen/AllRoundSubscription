@@ -1,7 +1,7 @@
 """
 推送队列管理服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,7 @@ from app.services.limits import limits_service
 from app.db.redis import get_redis
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PushQueueService:
@@ -47,7 +47,7 @@ class PushQueueService:
             return None
             
         except Exception as e:
-            logger.error(f"获取推送项目失败: {str(e)}")
+            logger.error(f"获取推送项目失败: {str(e)}", exc_info=True)
             return None
     
     async def process_push_item(

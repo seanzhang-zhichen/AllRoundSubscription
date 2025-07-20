@@ -2,7 +2,7 @@
 微信API服务
 """
 import httpx
-import logging
+from app.core.logging import get_logger
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import json
@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.exceptions import BusinessException, ErrorCode
 from app.db.redis import get_redis
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WeChatService:
@@ -59,6 +59,8 @@ class WeChatService:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 logger.info(f"调用微信API获取session，code: {code[:10]}...")
+                logger.debug(f"请求参数: appid={self.app_id}, code长度={len(code)}")
+                
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 
@@ -69,19 +71,26 @@ class WeChatService:
                 if "errcode" in data:
                     error_code = data["errcode"]
                     error_msg = data.get("errmsg", "未知错误")
+                    rid = data.get("rid", "")
                     
-                    logger.error(f"微信API返回错误: {error_code} - {error_msg}")
+                    logger.error(f"微信API返回错误: {error_code} - {error_msg}, rid: {rid}")
                     
                     # 根据错误码返回友好的错误信息
                     error_messages = {
-                        40013: "无效的AppID",
-                        40014: "无效的AppSecret",
-                        40029: "无效的code",
-                        45011: "API调用太频繁",
+                        40013: "无效的AppID，请检查微信小程序配置",
+                        40014: "无效的AppSecret，请检查微信小程序配置", 
+                        40029: "无效的code，请重新获取登录凭证",
+                        45011: "API调用太频繁，请稍后重试",
                         40226: "高风险等级用户，小程序登录拦截"
                     }
                     
                     friendly_message = error_messages.get(error_code, f"微信登录失败: {error_msg}")
+                    
+                    # 对于40029错误，提供更详细的说明
+                    if error_code == 40029:
+                        logger.warning(f"Code可能已过期或被重复使用，code: {code}")
+                        friendly_message = "登录凭证已失效，请重新登录"
+                    
                     raise BusinessException(
                         error_code=ErrorCode.INVALID_PARAMS,
                         message=friendly_message
@@ -116,6 +125,12 @@ class WeChatService:
             )
         except Exception as e:
             logger.error(f"微信API调用异常: {str(e)}", exc_info=True)
+            
+            # 记录详细的调试信息
+            logger.debug(f"请求URL: {url}")
+            logger.debug(f"请求参数: {params}")
+            logger.debug(f"Code长度: {len(code)}")
+            
             raise BusinessException(
                 error_code=ErrorCode.PLATFORM_ERROR,
                 message="微信登录服务异常"
@@ -153,7 +168,7 @@ class WeChatService:
                 return data
                 
         except Exception as e:
-            logger.error(f"获取用户信息异常: {str(e)}")
+            logger.error(f"获取用户信息异常: {str(e)}", exc_info=True)
             return None
     
     async def get_service_access_token(self) -> Optional[str]:
@@ -214,7 +229,7 @@ class WeChatService:
                 return access_token
                 
         except Exception as e:
-            logger.error(f"获取access_token异常: {str(e)}")
+            logger.error(f"获取access_token异常: {str(e)}", exc_info=True)
             return None
     
     async def send_template_message(

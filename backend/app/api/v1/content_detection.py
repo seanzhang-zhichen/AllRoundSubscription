@@ -11,9 +11,9 @@ from app.services.push_queue import push_queue_service
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.common import DataResponse
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/content-detection", tags=["内容检测"])
 

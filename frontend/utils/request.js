@@ -8,7 +8,7 @@ import performanceMonitor from './performanceMonitor'
 
 // API基础配置
 const API_CONFIG = {
-  baseURL: process.env.NODE_ENV === 'production' 
+  baseURL: (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production')
     ? 'https://your-production-api.com/api/v1' 
     : 'http://localhost:8000/api/v1', // 根据环境切换API地址
   timeout: 10000, // 请求超时时间
@@ -44,17 +44,25 @@ class Request {
           ...config.header,
           'Authorization': `Bearer ${token}`
         }
+        console.log('添加认证令牌到请求头')
+      } else {
+        console.warn('未找到认证令牌，请求可能失败')
       }
       
       // 添加请求ID用于调试
       config.header['X-Request-ID'] = this.generateRequestId()
       
-      console.log('Request:', config)
+      console.log('Request:', {
+        url: config.url,
+        method: config.method,
+        hasToken: !!token,
+        headers: config.header
+      })
       return config
     })
     
     // 响应拦截器 - 统一错误处理
-    this.interceptors.response.push(
+    this.interceptors.response.push([
       (response) => {
         console.log('Response:', response)
         
@@ -63,10 +71,19 @@ class Request {
           const data = response.data
           
           // 检查业务状态码
-          if (data.code === 200) {
-            return data.data
-          } else {
+          if (data && data.code === 200) {
+            // 对于分页响应，返回完整的响应对象（包含data, total, page等）
+            // 对于普通响应，返回data字段
+            if (data.total !== undefined && data.page !== undefined) {
+              return data // 返回完整的分页响应
+            } else {
+              return data.data // 返回数据部分
+            }
+          } else if (data && data.code !== undefined) {
             return Promise.reject(new Error(data.message || '请求失败'))
+          } else {
+            // 如果没有标准的业务状态码，直接返回数据
+            return data
           }
         } else {
           return Promise.reject(new Error(`HTTP ${response.statusCode}: ${response.errMsg}`))
@@ -88,7 +105,7 @@ class Request {
         
         return Promise.reject(error)
       }
-    )
+    ])
   }
   
   /**
@@ -138,6 +155,7 @@ class Request {
       const response = await new Promise((resolve, reject) => {
         uni.request({
           ...processedConfig,
+          url: fullUrl, // 使用完整的URL
           success: resolve,
           fail: reject
         })
@@ -160,10 +178,16 @@ class Request {
       let processedResponse = response
       for (const interceptor of this.interceptors.response) {
         try {
-          processedResponse = await interceptor[0](processedResponse)
+          // 检查拦截器格式，支持函数和数组两种格式
+          if (typeof interceptor === 'function') {
+            processedResponse = await interceptor(processedResponse)
+          } else if (Array.isArray(interceptor) && typeof interceptor[0] === 'function') {
+            processedResponse = await interceptor[0](processedResponse)
+          }
           break
         } catch (error) {
-          if (interceptor[1]) {
+          // 处理错误拦截器
+          if (Array.isArray(interceptor) && typeof interceptor[1] === 'function') {
             return interceptor[1](error)
           }
           throw error
@@ -193,7 +217,7 @@ class Request {
       
       // 执行错误拦截器
       for (const interceptor of this.interceptors.response) {
-        if (interceptor[1]) {
+        if (Array.isArray(interceptor) && typeof interceptor[1] === 'function') {
           try {
             return await interceptor[1](error)
           } catch (e) {

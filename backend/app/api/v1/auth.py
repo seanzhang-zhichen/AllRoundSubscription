@@ -3,7 +3,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
+from app.core.logging import get_logger
 
 from app.db.database import get_db
 from app.services.auth import auth_service
@@ -16,7 +16,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import AuthenticationException, BusinessException
 from app.models.user import User
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -183,6 +183,33 @@ async def get_auth_status(
             detail={
                 "code": 500,
                 "message": "获取认证状态失败"
+            }
+        )
+
+
+@router.get("/verify", response_model=SuccessResponse, summary="验证访问令牌")
+async def verify_token(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    验证当前访问令牌是否有效
+    
+    需要认证，如果令牌有效则返回成功响应
+    """
+    try:
+        logger.debug(f"验证令牌，用户ID: {current_user.id}")
+        
+        return SuccessResponse(
+            message="令牌验证成功"
+        )
+        
+    except Exception as e:
+        logger.error(f"令牌验证异常: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": 500,
+                "message": "令牌验证失败"
             }
         )
 

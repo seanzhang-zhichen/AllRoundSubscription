@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
-import logging
+from app.core.logging import get_logger
 
 from app.db.database import get_db
 from app.db.redis import cache_service
@@ -13,7 +13,7 @@ from app.core.exceptions import AuthenticationException
 from app.services.auth import auth_service
 from app.models.user import User
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # HTTP Bearer认证
 security = HTTPBearer(auto_error=False)

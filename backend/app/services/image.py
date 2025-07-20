@@ -4,9 +4,9 @@
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 import re
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ImageService:

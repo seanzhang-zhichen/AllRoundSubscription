@@ -15,10 +15,11 @@ from app.core.exceptions import BusinessException
 from app.services.image import image_service
 from app.services.platform import platform_service
 import json
-import logging
+import traceback
+from app.core.logging import get_logger
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ContentService:
@@ -505,6 +506,7 @@ class ContentService:
             
         except Exception as e:
             logger.error(f"获取缓存动态流失败: {str(e)}")
+            traceback.print_exc()
             return None
     
     async def _cache_feed(self, cache_key: str, result: PaginatedResponse[ArticleWithAccount]) -> None:
@@ -565,6 +567,233 @@ class ContentService:
             
         except Exception as e:
             logger.error(f"缓存文章详情失败: {str(e)}")
+
+
+    async def mark_article_as_read(
+        self, 
+        db: AsyncSession, 
+        article_id: int, 
+        user_id: int
+    ) -> bool:
+        """
+        标记文章为已读
+        
+        Args:
+            db: 数据库会话
+            article_id: 文章ID
+            user_id: 用户ID
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 这里可以添加用户阅读记录的逻辑
+            # 目前先简单返回成功
+            logger.info(f"用户 {user_id} 标记文章 {article_id} 为已读")
+            return True
+            
+        except Exception as e:
+            logger.error(f"标记文章已读失败: {str(e)}")
+            return False
+    
+    async def favorite_article(
+        self, 
+        db: AsyncSession, 
+        article_id: int, 
+        user_id: int
+    ) -> bool:
+        """
+        收藏文章
+        
+        Args:
+            db: 数据库会话
+            article_id: 文章ID
+            user_id: 用户ID
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 这里可以添加收藏记录的逻辑
+            # 目前先简单返回成功
+            logger.info(f"用户 {user_id} 收藏文章 {article_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"收藏文章失败: {str(e)}")
+            return False
+    
+    async def unfavorite_article(
+        self, 
+        db: AsyncSession, 
+        article_id: int, 
+        user_id: int
+    ) -> bool:
+        """
+        取消收藏文章
+        
+        Args:
+            db: 数据库会话
+            article_id: 文章ID
+            user_id: 用户ID
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 这里可以添加取消收藏的逻辑
+            # 目前先简单返回成功
+            logger.info(f"用户 {user_id} 取消收藏文章 {article_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"取消收藏文章失败: {str(e)}")
+            return False
+    
+    async def share_article(
+        self, 
+        db: AsyncSession, 
+        article_id: int, 
+        user_id: int
+    ) -> bool:
+        """
+        记录文章分享统计
+        
+        Args:
+            db: 数据库会话
+            article_id: 文章ID
+            user_id: 用户ID
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 这里可以添加分享统计的逻辑
+            # 目前先简单返回成功
+            logger.info(f"用户 {user_id} 分享文章 {article_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"记录文章分享失败: {str(e)}")
+            return False
+    
+    async def search_articles(
+        self,
+        db: AsyncSession,
+        keyword: str,
+        platform: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+        user_id: Optional[int] = None
+    ) -> PaginatedResponse[ArticleWithAccount]:
+        """
+        搜索文章
+        
+        Args:
+            db: 数据库会话
+            keyword: 搜索关键词
+            platform: 平台筛选
+            page: 页码
+            page_size: 每页大小
+            user_id: 用户ID（可选，用于筛选订阅内容）
+        
+        Returns:
+            分页的文章列表
+        """
+        try:
+            offset = (page - 1) * page_size
+            
+            # 构建基础查询
+            base_query = select(Article, Account).join(Account, Article.account_id == Account.id)
+            
+            # 添加关键词搜索条件
+            search_conditions = [
+                Article.title.contains(keyword),
+                Article.content.contains(keyword),
+                Article.summary.contains(keyword)
+            ]
+            base_query = base_query.where(
+                func.or_(*search_conditions)
+            )
+            
+            # 添加平台筛选
+            if platform:
+                base_query = base_query.where(Account.platform == platform)
+            
+            # 如果提供了用户ID，只搜索用户订阅的内容
+            if user_id:
+                subscribed_accounts_query = select(Subscription.account_id).where(
+                    Subscription.user_id == user_id
+                )
+                subscribed_accounts_result = await db.execute(subscribed_accounts_query)
+                subscribed_account_ids = [row[0] for row in subscribed_accounts_result.fetchall()]
+                
+                if subscribed_account_ids:
+                    base_query = base_query.where(Article.account_id.in_(subscribed_account_ids))
+                else:
+                    # 用户没有订阅任何账号
+                    return PaginatedResponse.create(
+                        data=[],
+                        total=0,
+                        page=page,
+                        page_size=page_size
+                    )
+            
+            # 查询总数
+            count_query = select(func.count()).select_from(base_query.subquery())
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            
+            # 查询文章列表
+            articles_query = (
+                base_query
+                .order_by(desc(Article.publish_timestamp))
+                .offset(offset)
+                .limit(page_size)
+            )
+            
+            articles_result = await db.execute(articles_query)
+            articles_data = articles_result.fetchall()
+            
+            # 转换为响应模型
+            articles = []
+            for article, account in articles_data:
+                article_with_account = ArticleWithAccount(
+                    id=article.id,
+                    account_id=article.account_id,
+                    title=article.title,
+                    url=article.url,
+                    content=article.content,
+                    summary=article.summary,
+                    publish_time=article.publish_time,
+                    publish_timestamp=article.publish_timestamp,
+                    images=article.images or [],
+                    details=article.details or {},
+                    created_at=article.created_at,
+                    updated_at=article.updated_at,
+                    image_count=article.image_count,
+                    has_images=article.has_images,
+                    thumbnail_url=article.get_thumbnail_url(),
+                    account_name=account.name,
+                    account_platform=account.platform.value,
+                    account_avatar_url=account.avatar_url,
+                    platform_display_name=platform_service.get_platform_display_name(account.platform.value)
+                )
+                articles.append(article_with_account)
+            
+            result = PaginatedResponse.create(
+                data=articles,
+                total=total,
+                page=page,
+                page_size=page_size
+            )
+            
+            logger.info(f"搜索文章: {keyword}，平台: {platform}，结果数: {total}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"搜索文章失败: {str(e)}")
+            raise BusinessException(message="搜索文章失败")
 
 
 # 创建服务实例

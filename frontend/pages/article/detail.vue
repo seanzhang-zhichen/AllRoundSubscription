@@ -118,7 +118,8 @@
 </template>
 
 <script>
-import { ref, onMounted, onLoad } from 'vue'
+import { ref, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { useContentStore } from '@/stores/content'
 import Loading from '@/components/Loading.vue'
 import ShareButton from '@/components/ShareButton.vue'

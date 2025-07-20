@@ -13,9 +13,9 @@ from app.models.user import User
 from app.services.image import image_service
 from app.services.platform import platform_service
 from app.services.refresh import refresh_service
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -176,6 +176,137 @@ async def get_platform_info(
         "data": platform_info,
         "platform": platform
     }
+
+
+@router.post("/articles/{article_id}/read")
+async def mark_article_as_read(
+    article_id: int = Path(..., description="文章ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    标记文章为已读
+    
+    - **article_id**: 文章ID
+    """
+    logger.info(f"用户 {current_user.id} 标记文章 {article_id} 为已读")
+    
+    result = await content_service.mark_article_as_read(
+        db=db,
+        article_id=article_id,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "标记成功"
+    }
+
+
+@router.post("/articles/{article_id}/favorite")
+async def favorite_article(
+    article_id: int = Path(..., description="文章ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    收藏文章
+    
+    - **article_id**: 文章ID
+    """
+    logger.info(f"用户 {current_user.id} 收藏文章 {article_id}")
+    
+    result = await content_service.favorite_article(
+        db=db,
+        article_id=article_id,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "收藏成功"
+    }
+
+
+@router.delete("/articles/{article_id}/favorite")
+async def unfavorite_article(
+    article_id: int = Path(..., description="文章ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    取消收藏文章
+    
+    - **article_id**: 文章ID
+    """
+    logger.info(f"用户 {current_user.id} 取消收藏文章 {article_id}")
+    
+    result = await content_service.unfavorite_article(
+        db=db,
+        article_id=article_id,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "取消收藏成功"
+    }
+
+
+@router.post("/articles/{article_id}/share")
+async def share_article(
+    article_id: int = Path(..., description="文章ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    记录文章分享统计
+    
+    - **article_id**: 文章ID
+    """
+    logger.info(f"用户 {current_user.id} 分享文章 {article_id}")
+    
+    result = await content_service.share_article(
+        db=db,
+        article_id=article_id,
+        user_id=current_user.id
+    )
+    
+    return {
+        "success": True,
+        "message": "分享记录成功"
+    }
+
+
+@router.get("/articles/search")
+async def search_articles(
+    keyword: str = Query(..., description="搜索关键词"),
+    platform: Optional[str] = Query(None, description="平台筛选"),
+    page: int = Query(default=1, ge=1, description="页码"),
+    page_size: int = Query(default=20, ge=1, le=50, description="每页大小"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    搜索文章
+    
+    - **keyword**: 搜索关键词
+    - **platform**: 平台筛选（可选）
+    - **page**: 页码，从1开始
+    - **page_size**: 每页大小，最大50
+    """
+    logger.info(f"用户 {current_user.id} 搜索文章: {keyword}")
+    
+    result = await content_service.search_articles(
+        db=db,
+        keyword=keyword,
+        platform=platform,
+        page=page,
+        page_size=page_size,
+        user_id=current_user.id
+    )
+    
+    return result
 
 
 @router.post("/articles/{article_id}/images/optimize")

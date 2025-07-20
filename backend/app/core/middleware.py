@@ -5,14 +5,14 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Optional, List
 from app.db.redis import cache_service
 from app.core.exceptions import BusinessException, ErrorCode, AuthenticationException
 from app.core.security import jwt_manager
 from app.core.monitoring import get_performance_monitor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 performance_monitor = get_performance_monitor()
 
 
@@ -165,7 +165,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         self.protected_paths = protected_paths or [
             "/api/v1/users",
             "/api/v1/subscriptions", 
-            "/api/v1/feed",
+            "/api/v1/content",
             "/api/v1/articles"
         ]
         # 不需要认证的路径
@@ -192,6 +192,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             auth_header = request.headers.get("Authorization")
             
             if not auth_header:
+                logger.warning(f"受保护路径缺少认证令牌: {path}")
                 return JSONResponse(
                     status_code=401,
                     content={

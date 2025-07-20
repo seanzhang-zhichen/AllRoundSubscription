@@ -1,7 +1,7 @@
 """
 推送统计和监控服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from app.models.membership import MembershipLevel
 from app.db.redis import get_redis
 import json
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PushStatisticsService:
@@ -169,7 +169,7 @@ class PushStatisticsService:
             return result
             
         except Exception as e:
-            logger.error(f"获取系统推送统计失败: {str(e)}")
+            logger.error(f"获取系统推送统计失败: {str(e)}", exc_info=True)
             return {
                 "error": str(e),
                 "period": {
@@ -254,7 +254,7 @@ class PushStatisticsService:
             return result
             
         except Exception as e:
-            logger.error(f"获取平台推送统计失败: {str(e)}")
+            logger.error(f"获取平台推送统计失败: {str(e)}", exc_info=True)
             return {
                 "error": str(e),
                 "period_days": days

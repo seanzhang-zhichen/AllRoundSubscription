@@ -4,14 +4,14 @@ Redis缓存配置
 import redis.asyncio as redis
 from typing import Optional, Any, List, Dict, Callable
 import json
-import logging
+from app.core.logging import get_logger
 import hashlib
 import time
 from functools import wraps
 from app.core.config import settings
 from app.core.monitoring import get_performance_monitor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 performance_monitor = get_performance_monitor()
 
 # Redis连接池
@@ -21,20 +21,32 @@ redis_pool = None
 async def get_redis_pool():
     """获取Redis连接池"""
     global redis_pool
-    if redis_pool is None:
-        redis_pool = redis.ConnectionPool.from_url(
-            settings.REDIS_URL,
-            encoding="utf-8",
-            decode_responses=True,
-            max_connections=20
-        )
+    if redis_pool is None and settings.REDIS_URL:
+        try:
+            # 使用带认证的Redis URL
+            redis_url = settings.redis_url_with_auth
+            redis_pool = redis.ConnectionPool.from_url(
+                redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+                max_connections=20
+            )
+        except Exception as e:
+            logger.warning(f"Redis连接池创建失败: {str(e)}")
+            redis_pool = None
     return redis_pool
 
 
-async def get_redis() -> redis.Redis:
+async def get_redis() -> Optional[redis.Redis]:
     """获取Redis客户端"""
-    pool = await get_redis_pool()
-    return redis.Redis(connection_pool=pool)
+    try:
+        pool = await get_redis_pool()
+        if pool is None:
+            return None
+        return redis.Redis(connection_pool=pool)
+    except Exception as e:
+        logger.warning(f"获取Redis客户端失败: {str(e)}")
+        return None
 
 
 class CacheService:
@@ -46,7 +58,7 @@ class CacheService:
         self.hit_count = 0
         self.miss_count = 0
     
-    async def _get_redis(self) -> redis.Redis:
+    async def _get_redis(self) -> Optional[redis.Redis]:
         """获取Redis客户端实例"""
         if self._redis is None:
             # 使用简单的双重检查锁定模式
@@ -64,6 +76,10 @@ class CacheService:
         start_time = time.time()
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过缓存设置: {key}")
+                return False
+                
             if isinstance(value, (dict, list)):
                 value = json.dumps(value, ensure_ascii=False)
             await redis_client.set(key, value, ex=expire)
@@ -74,7 +90,7 @@ class CacheService:
             
             return True
         except Exception as e:
-            logger.error(f"设置缓存失败: {key}, 错误: {str(e)}")
+            logger.debug(f"设置缓存失败: {key}, 错误: {str(e)}")
             performance_monitor.record_metric("cache.set.error", 1, {"key": key})
             return False
     
@@ -83,6 +99,11 @@ class CacheService:
         start_time = time.time()
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过缓存获取: {key}")
+                self.miss_count += 1
+                return None
+                
             value = await redis_client.get(key)
             
             operation_time = time.time() - start_time
@@ -103,7 +124,7 @@ class CacheService:
             except (json.JSONDecodeError, TypeError):
                 return value
         except Exception as e:
-            logger.error(f"获取缓存失败: {key}, 错误: {str(e)}")
+            logger.debug(f"获取缓存失败: {key}, 错误: {str(e)}")
             performance_monitor.record_metric("cache.get.error", 1, {"key": key})
             return None
     
@@ -111,11 +132,14 @@ class CacheService:
         """删除缓存"""
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过缓存删除: {key}")
+                return False
             result = await redis_client.delete(key)
             performance_monitor.record_metric("cache.delete", 1, {"key": key})
             return result > 0
         except Exception as e:
-            logger.error(f"删除缓存失败: {key}, 错误: {str(e)}")
+            logger.debug(f"删除缓存失败: {key}, 错误: {str(e)}")
             performance_monitor.record_metric("cache.delete.error", 1, {"key": key})
             return False
     
@@ -123,9 +147,12 @@ class CacheService:
         """检查缓存是否存在"""
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过缓存存在性检查: {key}")
+                return False
             return await redis_client.exists(key) > 0
         except Exception as e:
-            logger.error(f"检查缓存存在性失败: {key}, 错误: {str(e)}")
+            logger.debug(f"检查缓存存在性失败: {key}, 错误: {str(e)}")
             return False
     
     async def get_or_set(self, key: str, factory: Callable, expire: int = 3600) -> Any:
@@ -163,6 +190,11 @@ class CacheService:
         """批量获取缓存"""
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过批量缓存获取: {keys}")
+                self.miss_count += len(keys)
+                return {}
+                
             values = await redis_client.mget(keys)
             
             result = {}
@@ -178,13 +210,16 @@ class CacheService:
             
             return result
         except Exception as e:
-            logger.error(f"批量获取缓存失败: {keys}, 错误: {str(e)}")
+            logger.debug(f"批量获取缓存失败: {keys}, 错误: {str(e)}")
             return {}
     
     async def mset(self, mapping: Dict[str, Any], expire: int = 3600) -> bool:
         """批量设置缓存"""
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过批量缓存设置: {list(mapping.keys())}")
+                return False
             
             # 准备数据
             cache_data = {}
@@ -206,13 +241,16 @@ class CacheService:
             
             return True
         except Exception as e:
-            logger.error(f"批量设置缓存失败: {list(mapping.keys())}, 错误: {str(e)}")
+            logger.debug(f"批量设置缓存失败: {list(mapping.keys())}, 错误: {str(e)}")
             return False
     
     async def delete_pattern(self, pattern: str) -> int:
         """按模式删除缓存"""
         try:
             redis_client = await self._get_redis()
+            if redis_client is None:
+                logger.debug(f"Redis不可用，跳过模式删除缓存: {pattern}")
+                return 0
             keys = await redis_client.keys(pattern)
             if keys:
                 deleted = await redis_client.delete(*keys)
@@ -220,7 +258,7 @@ class CacheService:
                 return deleted
             return 0
         except Exception as e:
-            logger.error(f"按模式删除缓存失败: {pattern}, 错误: {str(e)}")
+            logger.debug(f"按模式删除缓存失败: {pattern}, 错误: {str(e)}")
             return 0
     
     def get_hit_rate(self) -> float:

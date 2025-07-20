@@ -1,7 +1,7 @@
 """
 用户权限限制检查服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from app.core.exceptions import (
 )
 from app.db.redis import cache_service
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LimitsService:
@@ -506,7 +506,7 @@ class LimitsService:
                     PushRecord.user_id == user_id,
                     PushRecord.push_time >= today,
                     PushRecord.push_time < tomorrow,
-                    PushRecord.status == PushStatus.SUCCESS
+                    PushRecord.status == PushStatus.SUCCESS.value
                 )
             )
         )

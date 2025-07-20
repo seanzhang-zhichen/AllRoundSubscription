@@ -36,10 +36,28 @@ class WechatAuthManager {
 
       this.authState.isAuthorizing = true
 
-      // 检查授权频率限制
-      if (!this.canAttemptAuth() && !forceAuth) {
-        throw new Error('授权请求过于频繁，请稍后再试')
+      // 静默模式下的特殊处理
+      if (silent) {
+        // 检查授权频率限制（静默模式下更严格）
+        if (!this.canAttemptAuth() && !forceAuth) {
+          console.log('静默模式：授权请求过于频繁，跳过')
+          return null
+        }
+
+        // 检查微信环境
+        const envInfo = this.checkWechatEnvironment()
+        if (!envInfo.isWechat && !envInfo.isDevelopment) {
+          console.log('静默模式：非微信环境，跳过授权')
+          return null
+        }
+      } else {
+        // 交互模式下的频率检查
+        if (!this.canAttemptAuth() && !forceAuth) {
+          throw new Error('授权请求过于频繁，请稍后再试')
+        }
       }
+
+      console.log(`开始微信授权，模式: ${silent ? '静默' : '交互'}`)
 
       // 获取微信登录code
       const loginResult = await this.getWechatLoginCode(timeout)
@@ -48,12 +66,14 @@ class WechatAuthManager {
       this.authState.lastAuthTime = Date.now()
       this.authState.authRetryCount = 0
 
+      console.log('微信授权成功')
       return loginResult
 
     } catch (error) {
       this.authState.authRetryCount++
-      console.error('微信授权失败:', error)
+      console.error(`微信授权失败 (${silent ? '静默' : '交互'}模式):`, error)
       
+      // 静默模式下不显示错误提示
       if (!silent) {
         this.handleAuthError(error)
       }

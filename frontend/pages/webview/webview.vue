@@ -5,7 +5,8 @@
 </template>
 
 <script>
-import { ref, onLoad } from 'vue'
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 
 export default {
   name: 'WebViewPage',

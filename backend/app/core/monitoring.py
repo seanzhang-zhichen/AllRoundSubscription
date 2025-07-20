@@ -17,7 +17,6 @@ from sqlalchemy import text
 
 from app.core.logging import get_logger
 from app.db.database import engine
-from app.db.redis import redis_client
 
 logger = get_logger(__name__)
 
@@ -121,8 +120,12 @@ class MetricsCollector:
             memory = psutil.virtual_memory()
             system_memory_usage.set(memory.percent)
             
-            # 磁盘使用率
-            disk = psutil.disk_usage('/')
+            # 磁盘使用率 - Windows compatible
+            import os
+            if os.name == 'nt':  # Windows
+                disk = psutil.disk_usage('C:')
+            else:  # Unix/Linux
+                disk = psutil.disk_usage('/')
             disk_percent = (disk.used / disk.total) * 100
             system_disk_usage.set(disk_percent)
             
@@ -133,20 +136,11 @@ class MetricsCollector:
         """收集数据库指标"""
         try:
             async with engine.begin() as conn:
-                # 连接数统计
-                result = await conn.execute(text("""
-                    SELECT 
-                        count(*) as total_connections,
-                        count(*) FILTER (WHERE state = 'active') as active_connections,
-                        count(*) FILTER (WHERE state = 'idle') as idle_connections
-                    FROM pg_stat_activity 
-                    WHERE datname = current_database()
-                """))
-                
-                row = result.fetchone()
-                if row:
-                    db_connections_active.set(row.active_connections or 0)
-                    db_connections_idle.set(row.idle_connections or 0)
+                # SQLite doesn't have pg_stat_activity, so we'll use a simple connection test
+                await conn.execute(text("SELECT 1"))
+                # For SQLite, we can't get detailed connection stats, so set basic values
+                db_connections_active.set(1)  # At least one connection is active (this one)
+                db_connections_idle.set(0)    # SQLite doesn't maintain idle connections
                 
         except Exception as e:
             logger.error(f"收集数据库指标失败: {str(e)}")
@@ -154,36 +148,70 @@ class MetricsCollector:
     async def collect_redis_metrics(self) -> None:
         """收集Redis指标"""
         try:
+            # Import here to avoid circular import
+            from app.db.redis import get_redis
+            redis_client = await get_redis()
             if redis_client:
+                # Test connection with a simple ping first
+                await redis_client.ping()
                 info = await redis_client.info()
                 redis_connections_active.set(info.get('connected_clients', 0))
                 
         except Exception as e:
-            logger.error(f"收集Redis指标失败: {str(e)}")
+            # Don't log Redis errors as ERROR level if Redis is not configured
+            if "Authentication required" in str(e) or "Connection refused" in str(e):
+                logger.debug(f"Redis不可用，跳过Redis指标收集: {str(e)}")
+                redis_connections_active.set(0)
+            else:
+                logger.error(f"收集Redis指标失败: {str(e)}")
     
     async def collect_business_metrics(self) -> None:
         """收集业务指标"""
         try:
             async with engine.begin() as conn:
-                # 用户总数
-                result = await conn.execute(text("SELECT COUNT(*) FROM users"))
-                users_total.set(result.scalar() or 0)
+                # Check if tables exist before querying
+                tables_to_check = ['users', 'push_records', 'subscriptions', 'articles']
+                existing_tables = []
                 
-                # 日活用户（24小时内有活动）
-                result = await conn.execute(text("""
-                    SELECT COUNT(DISTINCT user_id) 
-                    FROM push_records 
-                    WHERE push_time >= NOW() - INTERVAL '24 hours'
-                """))
-                users_active_daily.set(result.scalar() or 0)
+                for table in tables_to_check:
+                    try:
+                        result = await conn.execute(text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"))
+                        if result.fetchone():
+                            existing_tables.append(table)
+                    except Exception:
+                        continue
+                
+                # 用户总数
+                if 'users' in existing_tables:
+                    result = await conn.execute(text("SELECT COUNT(*) FROM users"))
+                    users_total.set(result.scalar() or 0)
+                else:
+                    users_total.set(0)
+                
+                # 日活用户（24小时内有活动）- SQLite compatible
+                if 'push_records' in existing_tables:
+                    result = await conn.execute(text("""
+                        SELECT COUNT(DISTINCT user_id) 
+                        FROM push_records 
+                        WHERE push_time >= datetime('now', '-24 hours')
+                    """))
+                    users_active_daily.set(result.scalar() or 0)
+                else:
+                    users_active_daily.set(0)
                 
                 # 订阅总数
-                result = await conn.execute(text("SELECT COUNT(*) FROM subscriptions"))
-                subscriptions_total.set(result.scalar() or 0)
+                if 'subscriptions' in existing_tables:
+                    result = await conn.execute(text("SELECT COUNT(*) FROM subscriptions"))
+                    subscriptions_total.set(result.scalar() or 0)
+                else:
+                    subscriptions_total.set(0)
                 
                 # 文章总数
-                result = await conn.execute(text("SELECT COUNT(*) FROM articles"))
-                articles_total.set(result.scalar() or 0)
+                if 'articles' in existing_tables:
+                    result = await conn.execute(text("SELECT COUNT(*) FROM articles"))
+                    articles_total.set(result.scalar() or 0)
+                else:
+                    articles_total.set(0)
                 
         except Exception as e:
             logger.error(f"收集业务指标失败: {str(e)}")
@@ -197,6 +225,134 @@ class MetricsCollector:
             self.collect_business_metrics(),
             return_exceptions=True
         )
+
+
+class PerformanceMonitor:
+    """性能监控器"""
+    
+    def __init__(self):
+        self.metrics = {}
+    
+    def record_response_time(self, endpoint: str, method: str, status_code: int, response_time: float):
+        """记录HTTP响应时间"""
+        try:
+            # 记录到Prometheus指标
+            http_requests_total.labels(
+                method=method,
+                endpoint=endpoint,
+                status_code=status_code
+            ).inc()
+            
+            http_request_duration_seconds.labels(
+                method=method,
+                endpoint=endpoint
+            ).observe(response_time)
+            
+            # 记录到内部指标
+            self.record_metric(
+                'http.response.duration',
+                response_time,
+                {
+                    'method': method,
+                    'endpoint': endpoint,
+                    'status_code': str(status_code)
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"记录响应时间失败: {str(e)}")
+    
+    def record_metric(self, name: str, value: float, labels: Optional[Dict[str, str]] = None):
+        """记录性能指标"""
+        try:
+            if labels is None:
+                labels = {}
+            
+            # 根据指标名称选择合适的Prometheus指标
+            if name.endswith('.duration'):
+                # 持续时间指标使用Histogram
+                metric_name = name.replace('.', '_')
+                if metric_name not in self.metrics:
+                    self.metrics[metric_name] = Histogram(
+                        metric_name,
+                        f'Duration metric for {name}',
+                        list(labels.keys()) if labels else []
+                    )
+                
+                if labels:
+                    self.metrics[metric_name].labels(**labels).observe(value)
+                else:
+                    self.metrics[metric_name].observe(value)
+            
+            elif name.endswith('.error') or name.endswith('.hit') or name.endswith('.miss'):
+                # 计数指标使用Counter
+                metric_name = name.replace('.', '_')
+                if metric_name not in self.metrics:
+                    self.metrics[metric_name] = Counter(
+                        metric_name,
+                        f'Counter metric for {name}',
+                        list(labels.keys()) if labels else []
+                    )
+                
+                if labels:
+                    self.metrics[metric_name].labels(**labels).inc(value)
+                else:
+                    self.metrics[metric_name].inc(value)
+            
+            else:
+                # 其他指标使用Gauge
+                metric_name = name.replace('.', '_')
+                if metric_name not in self.metrics:
+                    self.metrics[metric_name] = Gauge(
+                        metric_name,
+                        f'Gauge metric for {name}',
+                        list(labels.keys()) if labels else []
+                    )
+                
+                if labels:
+                    self.metrics[metric_name].labels(**labels).set(value)
+                else:
+                    self.metrics[metric_name].set(value)
+                    
+        except Exception as e:
+            logger.error(f"记录性能指标失败: {name}, 错误: {str(e)}")
+
+
+class DatabaseMonitor:
+    """数据库监控器"""
+    
+    def __init__(self):
+        self.performance_monitor = PerformanceMonitor()
+    
+    def record_query(self, query_type: str, duration: float, success: bool = True):
+        """记录数据库查询"""
+        status = 'success' if success else 'error'
+        self.performance_monitor.record_metric(
+            f'db.query.{query_type}.duration',
+            duration,
+            {'status': status}
+        )
+
+
+# 全局实例
+_performance_monitor = None
+_database_monitor = None
+
+
+def get_performance_monitor() -> PerformanceMonitor:
+    """获取性能监控器实例"""
+    global _performance_monitor
+    if _performance_monitor is None:
+        _performance_monitor = PerformanceMonitor()
+    return _performance_monitor
+
+
+def get_database_monitor() -> DatabaseMonitor:
+    """获取数据库监控器实例"""
+    global _database_monitor
+    if _database_monitor is None:
+        _database_monitor = DatabaseMonitor()
+    return _database_monitor
 
 
 # 全局指标收集器实例
@@ -343,14 +499,17 @@ class HealthChecker:
     async def check_redis(self) -> Dict[str, Any]:
         """检查Redis连接"""
         try:
+            # Import here to avoid circular import
+            from app.db.redis import get_redis
+            redis_client = await get_redis()
             if redis_client:
                 await redis_client.ping()
                 return {"status": "healthy"}
             else:
-                return {"status": "unhealthy", "error": "Redis client not initialized"}
+                return {"status": "unavailable", "note": "Redis not configured or unavailable"}
                 
         except Exception as e:
-            return {"status": "unhealthy", "error": str(e)}
+            return {"status": "unavailable", "error": str(e)}
     
     async def check_external_apis(self) -> Dict[str, Any]:
         """检查外部API连接"""
@@ -369,9 +528,9 @@ class HealthChecker:
         db_status, redis_status, api_status = checks
         
         overall_status = "healthy"
-        if (db_status.get("status") != "healthy" or 
-            redis_status.get("status") != "healthy"):
+        if db_status.get("status") != "healthy":
             overall_status = "unhealthy"
+        # Redis unavailability doesn't make the system unhealthy, just unavailable
         
         return {
             "status": overall_status,

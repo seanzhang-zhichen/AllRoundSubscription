@@ -1,7 +1,7 @@
 """
 权限检查装饰器和工具
 """
-import logging
+from app.core.logging import get_logger
 from functools import wraps
 from typing import Callable, Any, Optional, List
 from fastapi import Depends, HTTPException, status
@@ -18,7 +18,7 @@ from app.core.exceptions import (
 from app.services.membership import membership_service, MembershipConfig
 from app.core.deps import get_current_user, get_db
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PermissionChecker:

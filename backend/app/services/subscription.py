@@ -1,7 +1,7 @@
 """
 订阅管理服务
 """
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +27,7 @@ from app.core.exceptions import (
 )
 from app.db.redis import cache_service
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SubscriptionService:

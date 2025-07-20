@@ -4,12 +4,12 @@
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
-import logging
+from app.core.logging import get_logger
 from app.services.search.base import PlatformAdapter, PlatformSearchResult, SearchResult
 from app.services.search.exceptions import SearchException, PlatformUnavailableException
 from app.schemas.account import AccountResponse
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SearchAggregator:

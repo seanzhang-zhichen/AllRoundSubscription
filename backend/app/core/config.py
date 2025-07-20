@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     
     # Redis配置
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_PASSWORD: Optional[str] = None
     
     # JWT配置
     SECRET_KEY: str = "your-secret-key-change-in-production"
@@ -47,11 +48,48 @@ class Settings(BaseSettings):
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
+    LOG_FILE: Optional[str] = None
     ENABLE_SQL_LOGGING: bool = False  # 控制SQL日志输出
     
     # Celery配置
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    
+    @property
+    def redis_url_with_auth(self) -> str:
+        """获取带认证的Redis URL"""
+        if self.REDIS_PASSWORD:
+            # 解析原始URL并添加密码
+            if "://" in self.REDIS_URL:
+                protocol, rest = self.REDIS_URL.split("://", 1)
+                return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
+            return self.REDIS_URL
+        return self.REDIS_URL
+    
+    @property
+    def celery_broker_url_with_auth(self) -> str:
+        """获取带认证的Celery Broker URL"""
+        if self.REDIS_PASSWORD:
+            if "://" in self.CELERY_BROKER_URL:
+                protocol, rest = self.CELERY_BROKER_URL.split("://", 1)
+                return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
+            return self.CELERY_BROKER_URL
+        return self.CELERY_BROKER_URL
+    
+    @property
+    def celery_result_backend_with_auth(self) -> str:
+        """获取带认证的Celery Result Backend URL"""
+        if self.REDIS_PASSWORD:
+            if "://" in self.CELERY_RESULT_BACKEND:
+                protocol, rest = self.CELERY_RESULT_BACKEND.split("://", 1)
+                return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
+            return self.CELERY_RESULT_BACKEND
+        return self.CELERY_RESULT_BACKEND
+    
+    # 监控配置
+    ENABLE_MONITORING: bool = True
+    ENABLE_METRICS: bool = True
+    ENABLE_REDIS_METRICS: bool = False
     
     @property
     def database_url(self) -> str:

@@ -5,10 +5,10 @@ from celery import shared_task
 from app.tasks.base import BaseTask
 from app.services.content_detection import content_detection_service
 from app.db.database import AsyncSessionLocal
-import logging
+from app.core.logging import get_logger
 import asyncio
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def _detect_new_content_async():
@@ -25,7 +25,7 @@ async def _detect_new_content_async():
             }
             
     except Exception as e:
-        logger.error(f"异步检测新内容失败: {str(e)}")
+        logger.error(f"异步检测新内容失败: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": str(e),
@@ -79,7 +79,7 @@ async def _get_notifications_async(user_id: int):
             }
             
     except Exception as e:
-        logger.error(f"异步获取通知失败: {str(e)}")
+        logger.error(f"异步获取通知失败: {str(e)}", exc_info=True)
         return {
             "success": False,
             "error": str(e),
@@ -113,7 +113,7 @@ def get_content_change_notifications(self, user_id: int):
             }
             
     except Exception as exc:
-        logger.error(f"获取内容变更通知任务失败: {str(exc)}")
+        logger.error(f"获取内容变更通知任务失败: {str(exc)}", exc_info=True)
         raise self.retry(exc=exc, countdown=30, max_retries=2)
 
 
@@ -122,7 +122,7 @@ async def _get_queue_status_async():
     try:
         return await content_detection_service.get_push_queue_status()
     except Exception as e:
-        logger.error(f"异步获取队列状态失败: {str(e)}")
+        logger.error(f"异步获取队列状态失败: {str(e)}", exc_info=True)
         return {"queue_length": 0, "status": "error", "error": str(e)}
 
 

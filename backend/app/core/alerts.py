@@ -5,8 +5,8 @@
 
 import asyncio
 import smtplib
-from email.mime.text import MimeText
-from email.mime.multipart import MimeMultipart
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -199,14 +199,14 @@ class EmailAlertHandler:
         
         try:
             # 创建邮件内容
-            msg = MimeMultipart()
+            msg = MIMEMultipart()
             msg['From'] = self.from_email
             msg['To'] = ', '.join(self.to_emails)
             msg['Subject'] = f"[{alert.level.value.upper()}] {alert.title}"
             
             # 邮件正文
             body = self._create_email_body(alert)
-            msg.attach(MimeText(body, 'html'))
+            msg.attach(MIMEText(body, 'html'))
             
             # 发送邮件
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:

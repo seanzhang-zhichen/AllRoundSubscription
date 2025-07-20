@@ -11,9 +11,9 @@ from app.models.subscription import Subscription
 from app.db.redis import get_redis
 from app.core.exceptions import BusinessException
 import json
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ContentRefreshService:
@@ -85,7 +85,7 @@ class ContentRefreshService:
                 await self._release_refresh_lock(user_id)
                 
         except Exception as e:
-            logger.error(f"刷新用户内容失败: {str(e)}")
+            logger.error(f"刷新用户内容失败: {str(e)}", exc_info=True)
             await self._release_refresh_lock(user_id)
             raise BusinessException(message="内容刷新失败")
     
@@ -156,7 +156,7 @@ class ContentRefreshService:
         except BusinessException:
             raise
         except Exception as e:
-            logger.error(f"刷新账号内容失败: {str(e)}")
+            logger.error(f"刷新账号内容失败: {str(e)}", exc_info=True)
             raise BusinessException(message="账号内容刷新失败")
     
     async def get_refresh_status(self, user_id: int) -> Dict[str, Any]:

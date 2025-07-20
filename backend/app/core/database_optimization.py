@@ -2,7 +2,7 @@
 数据库查询优化模块
 """
 import time
-import logging
+from app.core.logging import get_logger
 from typing import Any, Dict, List, Optional, Callable
 from functools import wraps
 from sqlalchemy import text, event
@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from app.core.monitoring import get_database_monitor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 database_monitor = get_database_monitor()
 
 

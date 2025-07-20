@@ -55,18 +55,40 @@ export default {
     
     async initAuth() {
       try {
-        // 使用增强的认证状态初始化
         const authStore = useAuthStore()
         
+        // 首先尝试增强登录检查（静默登录）
+        console.log('开始认证状态检查...')
         const isLoggedIn = await authStore.enhancedLoginCheck()
-        console.log('认证状态初始化完成:', isLoggedIn ? '已登录' : '未登录')
         
-        // 如果登录成功，启动自动续期检查
-        if (isLoggedIn) {
-          this.startAutoRenewalTimer()
+        if (!isLoggedIn) {
+          // 静默登录失败，尝试自动微信登录
+          console.log('静默登录失败，开始自动微信登录...')
+          try {
+            await authStore.wechatLogin({ 
+              silent: true, 
+              autoLogin: true,
+              forceAuth: false 
+            })
+            console.log('自动微信登录成功')
+          } catch (loginError) {
+            console.warn('自动微信登录失败:', loginError)
+            // 自动登录失败不影响应用启动，用户可以稍后手动登录
+          }
         }
+        
+        // 如果最终登录成功，启动自动续期检查
+        if (authStore.isLoggedIn) {
+          console.log('用户已登录，启动自动续期检查')
+          this.startAutoRenewalTimer()
+        } else {
+          console.log('用户未登录，将在需要时提示登录')
+        }
+        
+        console.log('认证状态初始化完成:', authStore.isLoggedIn ? '已登录' : '未登录')
       } catch (error) {
         console.error('认证状态初始化失败:', error)
+        // 即使认证初始化失败，也不应该阻止应用启动
       }
     },
     

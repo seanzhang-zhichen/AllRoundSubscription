@@ -2,7 +2,7 @@
 搜索服务实现
 """
 import asyncio
-import logging
+from app.core.logging import get_logger
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_
@@ -15,7 +15,7 @@ from app.schemas.account import AccountResponse
 from app.db.database import AsyncSessionLocal
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SearchService(SearchServiceBase):

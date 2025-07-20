@@ -54,8 +54,7 @@ class NetworkManager {
         interval: 30 * 1000, // 30秒检测一次
         timeout: 5000, // 5秒超时
         testUrls: [
-          'https://www.baidu.com/favicon.ico',
-          'https://cdn.jsdelivr.net/gh/jquery/jquery/dist/jquery.min.js'
+          'https://www.baidu.com/favicon.ico'
         ]
       },
       
@@ -602,4 +601,4 @@ export const useNetwork = () => {
 }
 
 export default networkManager
-export { NetworkManager, NetworkType, ConnectionQuality }
+export { NetworkManager }

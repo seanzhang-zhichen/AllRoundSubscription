@@ -7,8 +7,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import logging
-
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.exceptions import BusinessException
@@ -19,12 +17,16 @@ from app.api.v1.router import api_router
 from app.api.v1.monitoring import router as monitoring_router
 from app.db.database import engine, Base
 
-# 设置日志
+# 设置日志 - Windows compatible path
+import platform
+if platform.system() == "Windows":
+    default_log_file = "logs/app.log"  # Relative path for Windows
+else:
+    default_log_file = "/app/logs/app.log"  # Absolute path for Linux
+
 setup_logging(
     log_level=os.getenv("LOG_LEVEL", "INFO"),
-    log_file=os.getenv("LOG_FILE", "/app/logs/app.log"),
-    enable_json=os.getenv("ENABLE_JSON_LOGS", "true").lower() == "true",
-    enable_prometheus=os.getenv("ENABLE_PROMETHEUS", "true").lower() == "true"
+    log_file=os.getenv("LOG_FILE", default_log_file)
 )
 logger = get_logger(__name__)
 

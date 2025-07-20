@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import StaticPool
 from app.core.config import settings
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 创建异步数据库引擎
 if "sqlite" in settings.database_url.lower():

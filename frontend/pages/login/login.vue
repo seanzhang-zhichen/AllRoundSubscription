@@ -105,7 +105,7 @@ export default {
           return
         }
 
-        // 调用优化的微信登录
+        // 调用优化的微信登录，强制获取新的code
         await authStore.wechatLogin({
           silent: false,
           autoLogin: true,

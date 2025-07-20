@@ -21,9 +21,9 @@ from app.schemas.search import (
     SupportedPlatformsResponse
 )
 from app.schemas.account import AccountResponse, PlatformInfo
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

@@ -90,7 +90,8 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onPullDownRefresh, onReachBottom, onPageScroll } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { onPullDownRefresh, onReachBottom, onPageScroll, onShareAppMessage } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import Loading from '@/components/Loading.vue'
 import ContentCard from '@/components/ContentCard.vue'
@@ -263,8 +264,32 @@ export default {
     // 页面生命周期
     onMounted(async () => {
       console.log('首页初始化')
+      
+      // 等待认证状态稳定后再加载数据
+      await waitForAuthState()
       await initializeData()
     })
+
+    // 等待认证状态稳定
+    const waitForAuthState = async () => {
+      const maxWaitTime = 3000 // 最多等待3秒
+      const startTime = Date.now()
+      
+      while (Date.now() - startTime < maxWaitTime) {
+        // 检查认证状态是否已经确定（无论是否登录）
+        if (!authStore.loading) {
+          console.log('认证状态已确定:', isLoggedIn.value ? '已登录' : '未登录')
+          break
+        }
+        
+        // 等待100ms后再次检查
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+      
+      if (authStore.loading) {
+        console.warn('认证状态检查超时，继续加载页面')
+      }
+    }
 
     // 注册生命周期钩子
     onPullDownRefresh(handleRefresh)

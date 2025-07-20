@@ -2,14 +2,14 @@
 增强的限流模块
 """
 import time
-import logging
+from app.core.logging import get_logger
 from typing import Dict, Optional, List, Tuple
 from enum import Enum
 from dataclasses import dataclass
 from app.db.redis import cache_service
 from app.core.monitoring import get_performance_monitor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 performance_monitor = get_performance_monitor()
 
 

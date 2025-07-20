@@ -3,9 +3,9 @@ Celery任务基类
 """
 from celery import Task
 from app.celery_app import celery_app
-import logging
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseTask(Task):
@@ -17,7 +17,7 @@ class BaseTask(Task):
     
     def on_failure(self, exc, task_id, args, kwargs, einfo):
         """任务失败回调"""
-        logger.error(f"任务 {self.name} ({task_id}) 执行失败: {str(exc)}")
+        logger.error(f"任务 {self.name} ({task_id}) 执行失败: {str(exc)}", exc_info=True)
     
     def on_retry(self, exc, task_id, args, kwargs, einfo):
         """任务重试回调"""

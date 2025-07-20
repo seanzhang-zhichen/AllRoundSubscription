@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import logging
+from app.core.logging import get_logger
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationException
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

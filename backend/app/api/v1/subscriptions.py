@@ -1,7 +1,7 @@
 """
 订阅管理API路由
 """
-import logging
+from app.core.logging import get_logger
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ from app.core.exceptions import (
     DuplicateException
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
