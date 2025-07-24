@@ -10,8 +10,13 @@ from enum import Enum
 class Platform(Enum):
     """平台枚举"""
     WECHAT = "wechat"
+    WEIXIN = "weixin"  # 微信公众号的另一种表示
     WEIBO = "weibo"
     TWITTER = "twitter"
+    BILIBILI = "bilibili"
+    DOUYIN = "douyin"
+    ZHIHU = "zhihu"
+    XIAOHONGSHU = "xiaohongshu"
 
 
 class Account(BaseModel):
@@ -38,7 +43,12 @@ class Account(BaseModel):
         """平台显示名称"""
         platform_names = {
             "wechat": "微信公众号",
+            "weixin": "微信公众号",
             "weibo": "微博",
-            "twitter": "推特"
+            "twitter": "推特",
+            "bilibili": "哔哩哔哩",
+            "douyin": "抖音",
+            "zhihu": "知乎",
+            "xiaohongshu": "小红书"
         }
         return platform_names.get(self.platform, self.platform)

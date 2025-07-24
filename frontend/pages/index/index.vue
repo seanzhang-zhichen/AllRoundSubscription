@@ -45,6 +45,7 @@
             v-for="article in feedList"
             :key="article.id"
             :article="article"
+            :show-stats="false"
             @click="navigateToArticle"
             @favorite="handleFavorite"
             @share="handleShare"

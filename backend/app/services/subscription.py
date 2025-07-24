@@ -25,6 +25,7 @@ from app.core.exceptions import (
     SubscriptionLimitException,
     DuplicateException
 )
+import traceback
 from app.db.redis import cache_service
 
 logger = get_logger(__name__)
@@ -196,14 +197,8 @@ class SubscriptionService:
             
             # 平台筛选
             if query_params.platform:
-                try:
-                    platform = Platform(query_params.platform)
-                    base_query = base_query.where(Account.platform == platform)
-                except ValueError:
-                    raise BusinessException(
-                        error_code=ErrorCode.INVALID_PARAMS,
-                        message=f"不支持的平台: {query_params.platform}"
-                    )
+                # 直接使用字符串比较，因为数据库中存储的是字符串
+                base_query = base_query.where(Account.platform == query_params.platform)
             
             # 获取总数
             count_query = select(func.count()).select_from(base_query.subquery())
@@ -250,7 +245,7 @@ class SubscriptionService:
                     account_id=subscription.account_id,
                     created_at=subscription.created_at,
                     account_name=account.name,
-                    account_platform=account.platform.value,
+                    account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
                     account_description=account.description,
                     account_follower_count=account.follower_count,
@@ -271,6 +266,7 @@ class SubscriptionService:
             raise
         except Exception as e:
             logger.error(f"获取用户订阅列表失败: {str(e)}", exc_info=True)
+            traceback.print_exc()
             raise BusinessException(
                 error_code=ErrorCode.DATABASE_ERROR,
                 message="获取订阅列表失败"
@@ -310,7 +306,7 @@ class SubscriptionService:
             )
             platform_result = await db.execute(platform_stats_query)
             platform_stats = {
-                platform.value: count 
+                platform: count 
                 for platform, count in platform_result.fetchall()
             }
             
@@ -338,7 +334,7 @@ class SubscriptionService:
                     account_id=subscription.account_id,
                     created_at=subscription.created_at,
                     account_name=account.name,
-                    account_platform=account.platform.value,
+                    account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
                     account_description=account.description,
                     account_follower_count=account.follower_count,
@@ -510,14 +506,19 @@ class SubscriptionService:
                 message="检查订阅状态失败"
             )
     
-    def _get_platform_display_name(self, platform: Platform) -> str:
+    def _get_platform_display_name(self, platform: str) -> str:
         """获取平台显示名称"""
         display_names = {
-            Platform.WECHAT: "微信公众号",
-            Platform.WEIBO: "微博",
-            Platform.TWITTER: "推特"
+            "wechat": "微信公众号",
+            "weixin": "微信公众号",
+            "weibo": "微博",
+            "twitter": "推特",
+            "bilibili": "哔哩哔哩",
+            "douyin": "抖音",
+            "zhihu": "知乎",
+            "xiaohongshu": "小红书"
         }
-        return display_names.get(platform, platform.value)
+        return display_names.get(platform, platform)
     
     async def _get_user_by_id(self, db: AsyncSession, user_id: int) -> Optional[User]:
         """根据ID获取用户"""

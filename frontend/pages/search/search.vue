@@ -9,13 +9,8 @@
       <!-- 搜索头部 -->
       <view class="search-header">
         <view class="search-box">
-          <input 
-            v-model="searchKeyword" 
-            placeholder="搜索博主..." 
-            class="search-input"
-            @confirm="handleSearch"
-            @input="onSearchInput"
-          />
+          <input v-model="searchKeyword" placeholder="搜索博主..." class="search-input" @confirm="handleSearch"
+            @input="onSearchInput" />
           <button @click="handleSearch" class="search-btn" :disabled="searchStore.isSearching">
             {{ searchStore.isSearching ? '搜索中' : '搜索' }}
           </button>
@@ -26,20 +21,11 @@
       <view class="platform-filter" v-if="supportedPlatforms.length > 0">
         <scroll-view class="platform-scroll" scroll-x>
           <view class="platform-list">
-            <view 
-              class="platform-item"
-              :class="{ active: selectedPlatforms.length === 0 }"
-              @click="selectAllPlatforms"
-            >
+            <view class="platform-item" :class="{ active: selectedPlatforms.length === 0 }" @click="selectAllPlatforms">
               <text class="platform-text">全部</text>
             </view>
-            <view 
-              v-for="platform in supportedPlatforms" 
-              :key="platform.key"
-              class="platform-item"
-              :class="{ active: selectedPlatforms.includes(platform.key) }"
-              @click="togglePlatform(platform.key)"
-            >
+            <view v-for="platform in supportedPlatforms" :key="platform.key" class="platform-item"
+              :class="{ active: selectedPlatforms.includes(platform.key) }" @click="togglePlatform(platform.key)">
               <image class="platform-icon" :src="platform.icon" mode="aspectFit" />
               <text class="platform-text">{{ platform.name }}</text>
               <text v-if="searchStore.getPlatformResultCount(platform.key) > 0" class="platform-count">
@@ -51,18 +37,15 @@
       </view>
 
       <!-- 搜索历史 -->
-      <view v-if="!searchStore.currentKeyword && !searchStore.hasResults && appStore.searchHistory.length > 0" class="search-history">
+      <view v-if="!searchStore.currentKeyword && !searchStore.hasResults && appStore.searchHistory.length > 0"
+        class="search-history">
         <view class="history-header">
           <text class="history-title">搜索历史</text>
           <button class="clear-history-btn" @click="clearSearchHistory">清除</button>
         </view>
         <view class="history-list">
-          <view 
-            v-for="(keyword, index) in appStore.searchHistory" 
-            :key="index"
-            class="history-item"
-            @click="searchFromHistory(keyword)"
-          >
+          <view v-for="(keyword, index) in appStore.searchHistory" :key="index" class="history-item"
+            @click="searchFromHistory(keyword)">
             <text class="history-keyword">{{ keyword }}</text>
             <view class="history-remove" @click.stop="removeHistoryItem(keyword)">×</view>
           </view>
@@ -72,23 +55,22 @@
       <!-- 搜索结果 -->
       <view v-if="searchStore.hasResults" class="search-results">
         <view class="results-header">
-          <text class="results-count">找到 {{ searchStore.searchStats.totalResults }} 个博主</text>
+          <text class="results-count">
+            {{ searchStore.currentKeyword ? `找到 ${searchStore.searchStats.totalResults} 个博主` : `共
+            ${searchStore.searchStats.totalResults} 个博主` }}
+          </text>
         </view>
-        
+
         <view class="results-list">
-          <view 
-            v-for="account in searchStore.searchResults" 
-            :key="account.id"
-            class="account-item"
-            @click="viewAccountDetail(account)"
-          >
+          <view v-for="account in searchStore.searchResults" :key="account.id" class="account-item"
+            @click="viewAccountDetail(account)">
             <view class="account-avatar">
               <image :src="account.avatar_url" mode="aspectFill" class="avatar-img" />
               <view class="platform-badge" :style="{ backgroundColor: getPlatformColor(account.platform) }">
                 <image :src="getPlatformIcon(account.platform)" mode="aspectFit" class="badge-icon" />
               </view>
             </view>
-            
+
             <view class="account-info">
               <view class="account-name">{{ account.name }}</view>
               <view class="account-desc">{{ account.description || '暂无简介' }}</view>
@@ -96,15 +78,13 @@
                 <text class="follower-count">{{ formatFollowerCount(account.follower_count) }} 关注者</text>
                 <text class="platform-name">{{ getPlatformName(account.platform) }}</text>
               </view>
-            </view>
-            
-            <view class="account-action">
-              <button 
-                class="subscribe-btn"
-                :class="{ subscribed: isSubscribed(account.id) }"
-                @click.stop="toggleSubscribe(account)"
-              >
-                {{ isSubscribed(account.id) ? '已订阅' : '订阅' }}
+              
+              <button class="subscribe-btn" :class="{
+                subscribed: isSubscribed(account.id),
+                loading: subscriptionStore.isAccountLoading(account.id)
+              }" @click.stop="toggleSubscribe(account)" :disabled="subscriptionStore.isAccountLoading(account.id)">
+                <text v-if="isSubscribed(account.id)" class="unsubscribe-text">退订</text>
+                <text v-else class="subscribe-text">订阅</text>
               </button>
             </view>
           </view>
@@ -112,28 +92,19 @@
 
         <!-- 加载更多 -->
         <view v-if="searchStore.pagination.hasMore" class="load-more">
-          <button 
-            class="load-more-btn" 
-            @click="loadMoreResults"
-            :disabled="searchStore.loading"
-          >
+          <button class="load-more-btn" @click="loadMoreResults" :disabled="searchStore.loading">
             {{ searchStore.loading ? '加载中...' : '加载更多' }}
           </button>
         </view>
       </view>
 
       <!-- 无搜索结果 -->
-      <Empty 
-        v-if="searchStore.currentKeyword && !searchStore.hasResults && !searchStore.isSearching"
-        icon="search"
-        text="未找到相关博主"
-        :show-action="true"
-        action-text="换个关键词试试"
-        @action="clearSearch"
-      />
+      <Empty v-if="searchStore.currentKeyword && !searchStore.hasResults && !searchStore.isSearching" icon="search"
+        text="未找到相关博主" :show-action="true" action-text="换个关键词试试" @action="clearSearch" />
 
       <!-- 默认状态 -->
-      <view v-if="!searchStore.currentKeyword && !searchStore.hasResults && appStore.searchHistory.length === 0" class="default-state">
+      <view v-if="!searchStore.currentKeyword && !searchStore.hasResults && appStore.searchHistory.length === 0"
+        class="default-state">
         <view class="default-content">
           <image class="default-icon" src="/static/search-default.png" mode="aspectFit" />
           <text class="default-text">搜索你感兴趣的博主</text>
@@ -145,7 +116,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import Loading from '@/components/Loading.vue'
 import Empty from '@/components/Empty.vue'
 import { createPageState } from '@/utils/pageState'
@@ -164,7 +135,7 @@ export default {
     const appStore = useAppStore()
     const subscriptionStore = useSubscriptionStore()
     const authStore = useAuthStore()
-    
+
     // 创建页面状态管理器
     const pageState = createPageState({
       enableRetry: true,
@@ -185,13 +156,21 @@ export default {
       try {
         // 加载支持的平台列表
         supportedPlatforms.value = appStore.supportedPlatforms
-        
+
+        // 如果用户已登录，加载订阅列表
+        if (isLoggedIn.value) {
+          await subscriptionStore.fetchSubscriptions(true)
+        }
+
         // 如果有搜索关键词，恢复搜索状态
         if (searchStore.currentKeyword) {
           searchKeyword.value = searchStore.currentKeyword
           selectedPlatforms.value = [...searchStore.selectedPlatforms]
+        } else if (!searchStore.hasResults) {
+          // 如果没有搜索关键词且没有结果，加载所有博主
+          await searchStore.searchAccounts('', [], true)
         }
-        
+
         console.log('搜索页面初始化完成')
       } catch (error) {
         console.error('搜索页面初始化失败:', error)
@@ -211,7 +190,7 @@ export default {
       if (searchTimer.value) {
         clearTimeout(searchTimer.value)
       }
-      
+
       // 设置新的定时器，实现防抖
       searchTimer.value = setTimeout(() => {
         // 可以在这里实现搜索建议功能
@@ -271,9 +250,8 @@ export default {
     // 选择所有平台
     const selectAllPlatforms = async () => {
       selectedPlatforms.value = []
-      if (searchStore.currentKeyword) {
-        await searchStore.filterByPlatforms([])
-      }
+      // 加载所有平台的博主
+      await searchStore.searchAccounts('', [], true)
     }
 
     // 切换平台选择
@@ -284,9 +262,12 @@ export default {
       } else {
         selectedPlatforms.value.push(platformKey)
       }
-      
+
+      // 如果有搜索关键词，按关键词搜索；否则加载该平台的所有博主
       if (searchStore.currentKeyword) {
         await searchStore.filterByPlatforms(selectedPlatforms.value)
+      } else {
+        await searchStore.searchAccounts('', selectedPlatforms.value, true)
       }
     }
 
@@ -305,11 +286,9 @@ export default {
 
     // 查看博主详情
     const viewAccountDetail = (account) => {
-      // 这里可以跳转到博主详情页面
       console.log('查看博主详情:', account)
-      uni.showToast({
-        title: '博主详情功能开发中',
-        icon: 'none'
+      uni.navigateTo({
+        url: `/pages/account/detail?id=${account.id}`
       })
     }
 
@@ -329,17 +308,27 @@ export default {
       }
 
       try {
-        if (isSubscribed(account.id)) {
-          // 需要找到订阅ID来取消订阅
-          const subscription = subscriptionStore.subscriptions.find(sub => sub.account.id === account.id)
-          if (subscription) {
-            await subscriptionStore.unsubscribeAccount(subscription.id)
-          }
+        const currentlySubscribed = isSubscribed(account.id)
+        
+        if (currentlySubscribed) {
+          // 先更新本地状态，使按钮立即变化
+          subscriptionStore.updateLocalSubscriptionState(account.id, false)
+          // 取消订阅
+          await subscriptionStore.unsubscribeByAccountId(account.id)
         } else {
+          // 先更新本地状态，使按钮立即变化
+          subscriptionStore.updateLocalSubscriptionState(account.id, true)
+          // 创建订阅
           await subscriptionStore.subscribeAccount(account.id)
         }
+        
+        // 强制更新订阅状态视图
+        await nextTick()
       } catch (error) {
         console.error('订阅操作失败:', error)
+        // 操作失败时恢复原状态
+        const currentlySubscribed = isSubscribed(account.id)
+        subscriptionStore.updateLocalSubscriptionState(account.id, !currentlySubscribed)
       }
     }
 
@@ -385,15 +374,15 @@ export default {
       searchStore,
       appStore,
       subscriptionStore,
-      
+
       // 响应式数据
       searchKeyword,
       selectedPlatforms,
       supportedPlatforms,
-      
+
       // 计算属性
       isLoggedIn,
-      
+
       // 方法
       onSearchInput,
       handleSearch,
@@ -412,7 +401,7 @@ export default {
       getPlatformIcon,
       getPlatformColor,
       formatFollowerCount,
-      
+
       // 页面状态
       canRetry: pageState.canRetry
     }
@@ -712,23 +701,62 @@ export default {
   color: #007aff;
 }
 
-.account-action {
-  flex-shrink: 0;
-}
+
 
 .subscribe-btn {
-  background-color: #007aff;
-  color: white;
-  border: none;
-  padding: 15rpx 30rpx;
-  border-radius: 20rpx;
-  font-size: 24rpx;
-  min-width: 120rpx;
+  background-color: transparent;
+  border: 1rpx solid #007aff;
+  color: #007aff;
+  padding: 8rpx 16rpx;
+  border-radius: 10rpx;
+  font-size: 22rpx;
+  min-width: 80rpx;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  position: absolute;
+  right: 30rpx;
+  top: 28rpx;
+}
+
+.subscribe-btn:hover {
+  transform: translateY(-1rpx);
+  box-shadow: 0 2rpx 8rpx rgba(0, 122, 255, 0.2);
 }
 
 .subscribe-btn.subscribed {
-  background-color: #f0f0f0;
+  border: 1rpx solid #ff4757;
+  background-color: transparent;
+  color: #ff4757;
+}
+
+.subscribe-btn.subscribed:hover {
+  border-color: #ff3742;
+  box-shadow: 0 2rpx 8rpx rgba(255, 71, 87, 0.2);
+}
+
+.subscribe-btn.loading {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.subscribe-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.loading-text {
   color: #666;
+}
+
+.subscribe-text {
+  color: inherit;
+}
+
+.unsubscribe-text {
+  color: inherit;
 }
 
 /* 加载更多 */
@@ -789,16 +817,16 @@ export default {
   .account-item {
     padding: 20rpx;
   }
-  
+
   .avatar-img {
     width: 60rpx;
     height: 60rpx;
   }
-  
+
   .account-name {
     font-size: 28rpx;
   }
-  
+
   .account-desc {
     font-size: 22rpx;
   }

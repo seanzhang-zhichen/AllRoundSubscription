@@ -4,6 +4,7 @@
 """
 
 import sys
+import os
 from pathlib import Path
 from loguru import logger
 
@@ -35,14 +36,26 @@ def setup_logging(log_level: str = "INFO", log_file: str = None) -> None:
         # Windows-friendly logging configuration
         import platform
         if platform.system() == "Windows":
-            # On Windows, use time-based rotation to avoid file permission issues
+            # 使用带时间戳的唯一日志文件名，避免文件锁定问题
+            import time
+            timestamp = int(time.time())
+            log_filename = Path(log_file)
+            unique_log_file = os.path.join(
+                str(log_filename.parent), 
+                f"{log_filename.stem}_{timestamp}{log_filename.suffix}"
+            )
+            
             logger.add(
-                log_file,
+                unique_log_file,
                 format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message} | {extra}",
                 level=log_level.upper(),
-                rotation="1 day",  # Daily rotation instead of size-based
+                rotation="1 day",  # 每天轮换
                 retention="7 days",
-                enqueue=True  # Use a separate thread for writing to avoid blocking
+                enqueue=True,      # 使用单独线程写入
+                diagnose=True,     # 记录诊断信息
+                backtrace=True,    # 记录回溯信息
+                catch=True,        # 捕获异常
+                delay=True         # 延迟创建文件，直到第一条日志
             )
         else:
             # Unix/Linux can handle size-based rotation better

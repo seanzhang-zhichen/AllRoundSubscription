@@ -37,6 +37,12 @@
       }
     },
     {
+      "path": "pages/account/detail",
+      "style": {
+        "navigationBarTitleText": "博主详情"
+      }
+    },
+    {
       "path": "pages/webview/webview",
       "style": {
         "navigationBarTitleText": "查看原文"

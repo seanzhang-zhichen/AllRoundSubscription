@@ -121,9 +121,9 @@ class ContentService:
                     has_images=article.has_images,
                     thumbnail_url=article.get_thumbnail_url(),
                     account_name=account.name,
-                    account_platform=account.platform.value,
+                    account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
-                    platform_display_name=platform_service.get_platform_display_name(account.platform.value)
+                    platform_display_name=platform_service.get_platform_display_name(account.platform)
                 )
                 articles.append(article_with_account)
             
@@ -219,9 +219,9 @@ class ContentService:
                 has_images=article.has_images,
                 thumbnail_url=article.get_thumbnail_url(),
                 account_name=account.name,
-                account_platform=account.platform.value,
+                account_platform=account.platform,
                 account_avatar_url=account.avatar_url,
-                platform_display_name=platform_service.get_platform_display_name(account.platform.value),
+                platform_display_name=platform_service.get_platform_display_name(account.platform),
                 is_subscribed=is_subscribed,
                 related_articles=related_articles
             )
@@ -244,7 +244,7 @@ class ContentService:
         account_id: int,
         page: int = 1,
         page_size: int = 20
-    ) -> PaginatedResponse[ArticleResponse]:
+    ) -> PaginatedResponse[ArticleWithAccount]:
         """
         获取指定账号的文章列表
         
@@ -267,9 +267,10 @@ class ContentService:
             total_result = await db.execute(count_query)
             total = total_result.scalar() or 0
             
-            # 查询文章列表
+            # 查询文章列表，联接账号表
             articles_query = (
-                select(Article)
+                select(Article, Account)
+                .join(Account, Article.account_id == Account.id)
                 .where(Article.account_id == account_id)
                 .order_by(desc(Article.publish_timestamp))
                 .offset(offset)
@@ -281,8 +282,8 @@ class ContentService:
             
             # 转换为响应模型
             articles = []
-            for (article,) in articles_data:
-                article_response = ArticleResponse(
+            for article, account in articles_data:
+                article_response = ArticleWithAccount(
                     id=article.id,
                     account_id=article.account_id,
                     title=article.title,
@@ -297,7 +298,11 @@ class ContentService:
                     updated_at=article.updated_at,
                     image_count=article.image_count,
                     has_images=article.has_images,
-                    thumbnail_url=article.get_thumbnail_url()
+                    thumbnail_url=article.get_thumbnail_url(),
+                    account_name=account.name,
+                    account_platform=account.platform,
+                    account_avatar_url=account.avatar_url,
+                    platform_display_name=account.platform_display_name
                 )
                 articles.append(article_response)
             
@@ -386,7 +391,7 @@ class ContentService:
             
             platform_stats = {}
             for platform, count in platform_data:
-                platform_stats[platform.value] = count
+                platform_stats[platform] = count
             
             stats = ArticleStats(
                 total_articles=total_articles,
@@ -775,9 +780,9 @@ class ContentService:
                     has_images=article.has_images,
                     thumbnail_url=article.get_thumbnail_url(),
                     account_name=account.name,
-                    account_platform=account.platform.value,
+                    account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
-                    platform_display_name=platform_service.get_platform_display_name(account.platform.value)
+                    platform_display_name=platform_service.get_platform_display_name(account.platform)
                 )
                 articles.append(article_with_account)
             

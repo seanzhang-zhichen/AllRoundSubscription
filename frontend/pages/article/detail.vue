@@ -55,22 +55,6 @@
             />
           </view>
         </view>
-        
-        <!-- 文章统计 -->
-        <view class="article-stats">
-          <view class="stats-item">
-            <text class="stats-icon">👁</text>
-            <text class="stats-text">{{ formatNumber(article.view_count || 0) }} 阅读</text>
-          </view>
-          <view class="stats-item">
-            <text class="stats-icon">👍</text>
-            <text class="stats-text">{{ formatNumber(article.like_count || 0) }} 点赞</text>
-          </view>
-          <view class="stats-item">
-            <text class="stats-icon">💬</text>
-            <text class="stats-text">{{ formatNumber(article.comment_count || 0) }} 评论</text>
-          </view>
-        </view>
       </view>
       
       <!-- 相关文章推荐 -->
@@ -634,32 +618,6 @@ export default {
 
 .grid-single .content-image {
   height: 400rpx;
-}
-
-/* 文章统计 */
-.article-stats {
-  display: flex;
-  justify-content: space-around;
-  padding: 30rpx 0;
-  margin: 30rpx 0;
-  border-top: 1rpx solid #f0f0f0;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.stats-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.stats-icon {
-  font-size: 32rpx;
-}
-
-.stats-text {
-  font-size: 24rpx;
-  color: #666;
 }
 
 /* 相关文章推荐 */

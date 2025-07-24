@@ -3,6 +3,8 @@ FastAPI应用主入口
 """
 import os
 import asyncio
+import glob
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,30 @@ from app.core.alerts import system_monitor
 from app.api.v1.router import api_router
 from app.api.v1.monitoring import router as monitoring_router
 from app.db.database import engine, Base
+
+# 清理旧日志文件，防止因文件锁问题导致启动失败
+def cleanup_stale_logs():
+    import platform
+    if platform.system() == "Windows":
+        try:
+            log_dir = Path("logs")
+            if log_dir.exists():
+                # 检查是否有打开的日志文件句柄
+                import subprocess
+                import re
+                try:
+                    # 使用handle命令查找打开的文件句柄
+                    result = subprocess.run(["powershell", "-Command", "Get-Process | Where-Object {$_.Path -like '*python*'} | ForEach-Object {$_.Id} | ForEach-Object {handle -p $_ logs/app.log}"], 
+                                           capture_output=True, text=True, timeout=5)
+                    if "app.log" in result.stdout:
+                        print("警告：检测到日志文件被其他进程锁定。请关闭相关程序后重试。")
+                except Exception as e:
+                    print(f"检查日志文件锁失败: {e}")
+        except Exception as e:
+            print(f"清理日志文件失败: {e}")
+
+# 执行日志清理
+cleanup_stale_logs()
 
 # 设置日志 - Windows compatible path
 import platform

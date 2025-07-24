@@ -27,6 +27,108 @@ class SearchService(SearchServiceBase):
         self.aggregator = SearchAggregator(timeout_seconds=10)
         self._platform_status: Dict[str, bool] = {}
     
+    async def get_all_accounts(
+        self,
+        platforms: Optional[List[str]] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> SearchResult:
+        """
+        获取所有博主账号
+        
+        Args:
+            platforms: 指定平台列表，为None时获取所有平台
+            page: 页码
+            page_size: 每页大小
+            
+        Returns:
+            SearchResult: 搜索结果
+        """
+        try:
+            print("\n=== 获取所有博主账号 ===")
+            print(f"平台筛选: {platforms}")
+            print(f"页码: {page}, 每页大小: {page_size}")
+            
+            async with AsyncSessionLocal() as db:
+                # 构建查询条件
+                conditions = []
+                if platforms:
+                    conditions.append(Account.platform.in_(platforms))
+                
+                # 查询总数
+                if conditions:
+                    count_stmt = select(Account).where(and_(*conditions))
+                else:
+                    count_stmt = select(Account)
+                
+                # 打印实际执行的SQL语句
+                compiled_count = count_stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"获取所有博主COUNT SQL: {str(compiled_count)}")
+                
+                count_result = await db.execute(count_stmt)
+                total = len(count_result.fetchall())
+                
+                print(f"总博主数: {total}")
+                
+                # 分页查询
+                if conditions:
+                    stmt = (
+                        select(Account)
+                        .where(and_(*conditions))
+                        .offset((page - 1) * page_size)
+                        .limit(page_size)
+                        .order_by(Account.follower_count.desc(), Account.updated_at.desc())
+                    )
+                else:
+                    stmt = (
+                        select(Account)
+                        .offset((page - 1) * page_size)
+                        .limit(page_size)
+                        .order_by(Account.follower_count.desc(), Account.updated_at.desc())
+                    )
+                
+                # 打印实际执行的SQL语句
+                compiled = stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"获取所有博主SQL: {str(compiled)}")
+                print(f"分页: offset={(page - 1) * page_size}, limit={page_size}")
+                
+                result = await db.execute(stmt)
+                accounts = result.scalars().all()
+                
+                # 转换为AccountResponse格式
+                account_responses = []
+                for account in accounts:
+                    try:
+                        account_response = AccountResponse.model_validate(account)
+                        account_responses.append(account_response)
+                    except Exception as e:
+                        logger.warning(f"转换账号数据失败: {e}")
+                        continue
+                
+                return SearchResult(
+                    accounts=account_responses,
+                    total=total,
+                    page=page,
+                    page_size=page_size,
+                    has_more=(page * page_size) < total
+                )
+                
+        except Exception as e:
+            logger.error(f"获取所有博主失败: {e}")
+            return SearchResult(
+                accounts=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                has_more=False
+            )
+
     async def search_accounts(
         self,
         keyword: str,
@@ -46,6 +148,12 @@ class SearchService(SearchServiceBase):
         Returns:
             SearchResult: 搜索结果
         """
+        print("\n" + "="*50)
+        print(f"【search_accounts】搜索开始")
+        print(f"关键词: '{keyword}'")
+        print(f"平台列表: {platforms}")
+        print(f"页码: {page}, 每页大小: {page_size}")
+        
         # 尝试从缓存获取结果
         cached_result = await self.cache.get_search_result(
             keyword=keyword,
@@ -54,18 +162,34 @@ class SearchService(SearchServiceBase):
             page_size=page_size
         )
         if cached_result:
+            print("从缓存中获取到结果，结果数:", len(cached_result.accounts))
             return cached_result
+        else:
+            print("缓存中无结果，执行搜索")
         
         # 确定要搜索的平台
         target_platforms = platforms or self.get_supported_platforms()
+        print(f"目标搜索平台: {target_platforms}")
+        
         if not target_platforms:
-            return SearchResult(
-                accounts=[],
-                total=0,
+            print("没有可用平台，执行直接数据库搜索（不限平台）")
+            # 直接执行全局搜索，不限制平台
+            result = await self._search_all_platforms_local(keyword, page, page_size)
+            
+            # 缓存结果
+            print("缓存搜索结果...")
+            await self.cache.set_search_result(
+                keyword=keyword,
+                platforms=platforms,
                 page=page,
                 page_size=page_size,
-                has_more=False
+                result=result
             )
+            
+            print(f"【search_accounts】搜索完成，总结果数: {result.total}")
+            print("="*50 + "\n")
+            
+            return result
         
         # 获取目标平台的适配器
         target_adapters = []
@@ -73,36 +197,61 @@ class SearchService(SearchServiceBase):
             adapter = self.get_adapter(platform)
             if adapter and adapter.is_enabled:
                 target_adapters.append(adapter)
+                print(f"添加平台适配器: {platform} - {adapter.__class__.__name__}")
+            else:
+                print(f"平台 {platform} 的适配器不可用")
         
         if not target_adapters:
-            return SearchResult(
-                accounts=[],
-                total=0,
+            print("没有可用的平台适配器，执行本地数据库搜索")
+            # 如果有平台但没有适配器，使用本地数据库搜索这些平台
+            result = await self._fallback_to_local_search(keyword, target_platforms, page, page_size)
+            
+            # 缓存结果
+            print("缓存搜索结果...")
+            await self.cache.set_search_result(
+                keyword=keyword,
+                platforms=platforms,
                 page=page,
                 page_size=page_size,
-                has_more=False
+                result=result
             )
+            
+            print(f"【search_accounts】搜索完成，总结果数: {result.total}")
+            print("="*50 + "\n")
+            
+            return result
         
         # 使用聚合器进行多平台搜索
         try:
+            print("开始执行聚合搜索...")
             result, error_info = await self.aggregator.aggregate_search_results(
                 target_adapters, keyword, page, page_size
             )
             
             # 记录错误信息
             if error_info["errors"]:
+                print(f"搜索过程中发生错误: {error_info}")
                 logger.warning(f"搜索过程中发生错误: {error_info}")
+            
+            # 输出搜索结果概要
+            print(f"聚合搜索结果: 总数={result.total}, 当前页结果数={len(result.accounts)}")
             
             # 按相关性重新排序结果
             if result.accounts:
+                print("按相关性重新排序结果...")
                 result.accounts = self.aggregator.sort_by_relevance(result.accounts, keyword)
+                print("排序完成")
             
         except Exception as e:
+            print(f"搜索聚合失败: {str(e)}")
             logger.error(f"搜索聚合失败: {e}")
             # 降级到本地数据库搜索
+            print("降级到本地数据库搜索...")
             result = await self._fallback_to_local_search(keyword, target_platforms, page, page_size)
+            print(f"本地搜索结果: 总数={result.total}, 当前页结果数={len(result.accounts)}")
         
         # 缓存结果
+        print("缓存搜索结果...")
         await self.cache.set_search_result(
             keyword=keyword,
             platforms=platforms,
@@ -110,6 +259,9 @@ class SearchService(SearchServiceBase):
             page_size=page_size,
             result=result
         )
+        
+        print(f"【search_accounts】搜索完成，总结果数: {result.total}")
+        print("="*50 + "\n")
         
         return result
     
@@ -250,6 +402,35 @@ class SearchService(SearchServiceBase):
         
         return None
     
+    async def get_account_by_id(
+        self,
+        account_id: int,
+        db: AsyncSession
+    ) -> Optional[AccountResponse]:
+        """
+        根据账号ID获取账号信息
+        
+        Args:
+            account_id: 账号ID
+            db: 数据库会话
+            
+        Returns:
+            Optional[AccountResponse]: 账号信息，如果不存在返回None
+        """
+        try:
+            stmt = select(Account).where(Account.id == account_id)
+            result = await db.execute(stmt)
+            account = result.scalar_one_or_none()
+            
+            if account:
+                return AccountResponse.model_validate(account)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"根据ID获取账号信息失败: {str(e)}", exc_info=True)
+            return None
+    
     async def _search_platform_with_fallback(
         self,
         adapter,
@@ -322,6 +503,11 @@ class SearchService(SearchServiceBase):
             PlatformSearchResult: 搜索结果
         """
         try:
+            print(f"=== 执行本地数据库搜索 ===")
+            print(f"关键词: '{keyword}'")
+            print(f"平台: {platform}")
+            print(f"页码: {page}, 每页大小: {page_size}")
+            
             async with AsyncSessionLocal() as db:
                 # 构建搜索条件
                 search_conditions = [
@@ -332,10 +518,22 @@ class SearchService(SearchServiceBase):
                     )
                 ]
                 
+                print(f"搜索条件: platform='{platform}', keyword ILIKE '%{keyword}%' in name/description")
+                
                 # 查询总数
                 count_stmt = select(Account).where(and_(*search_conditions))
+                # 打印实际执行的SQL语句
+                compiled_count = count_stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"平台搜索COUNT SQL: {str(compiled_count)}")
+                
                 count_result = await db.execute(count_stmt)
-                total = len(count_result.fetchall())
+                result_list = count_result.fetchall()
+                total = len(result_list)
+                
+                print(f"找到总记录数: {total}")
                 
                 # 分页查询
                 stmt = (
@@ -346,8 +544,24 @@ class SearchService(SearchServiceBase):
                     .order_by(Account.follower_count.desc(), Account.updated_at.desc())
                 )
                 
+                # 打印实际执行的SQL语句
+                compiled = stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"平台搜索SQL: {str(compiled)}")
+                
+                print(f"执行分页查询: offset={(page - 1) * page_size}, limit={page_size}")
+                print(f"排序: follower_count DESC, updated_at DESC")
+                
                 result = await db.execute(stmt)
                 accounts = result.scalars().all()
+                
+                print(f"当前页获取记录数: {len(accounts)}")
+                if accounts:
+                    print("数据样例:")
+                    for i, acc in enumerate(accounts[:3]):  # 只打印前3条
+                        print(f"  {i+1}. ID={acc.id}, 名称='{acc.name}', 描述='{acc.description[:30]}...'")
                 
                 # 转换为字典格式
                 account_dicts = []
@@ -392,7 +606,7 @@ class SearchService(SearchServiceBase):
         page_size: int
     ) -> SearchResult:
         """
-        降级到本地数据库搜索
+        降级到本地数据库搜索（当外部搜索服务不可用时）
         
         Args:
             keyword: 搜索关键词
@@ -403,21 +617,132 @@ class SearchService(SearchServiceBase):
         Returns:
             SearchResult: 搜索结果
         """
+        print(f"\n*** 开始本地降级搜索 ***")
+        print(f"关键词: '{keyword}'")
+        print(f"平台列表: {platforms}")
+        print(f"页码: {page}, 每页大小: {page_size}")
+        
+        all_results = []
+        total = 0
+        
+        try:
+            # 如果没有指定平台或平台列表为空，尝试从数据库获取所有平台
+            if not platforms:
+                print("平台列表为空，尝试直接从数据库搜索所有平台...")
+                async with AsyncSessionLocal() as db:
+                    # 获取数据库中的所有平台
+                    from app.models.account import Account
+                    from sqlalchemy import select, distinct
+                    
+                    query = select(distinct(Account.platform))
+                    result = await db.execute(query)
+                    db_platforms = [row[0] for row in result.fetchall()]
+                    print(f"从数据库获取到的平台列表: {db_platforms}")
+                    
+                    if db_platforms:
+                        platforms = db_platforms
+                    else:
+                        print("数据库中没有平台记录，无法搜索")
+                        return SearchResult(
+                            accounts=[],
+                            total=0,
+                            page=page,
+                            page_size=page_size,
+                            has_more=False
+                        )
+            
+            # 如果仍然没有平台，执行不限平台的搜索
+            if not platforms:
+                print("无法获取平台列表，执行不限平台的搜索")
+                result = await self._search_all_platforms_local(keyword, page, page_size)
+                return result
+            
+            # 获取每个平台的搜索结果
+            platform_results = []
+            for platform in platforms:
+                print(f"在平台 {platform} 执行本地搜索...")
+                platform_result = await self._search_local_database(keyword, platform, 1, 100)  # 获取更多结果用于合并
+                if platform_result.success and platform_result.accounts:
+                    print(f"平台 {platform} 找到 {len(platform_result.accounts)} 条结果")
+                    platform_results.append(platform_result)
+                    total += platform_result.total
+                else:
+                    print(f"平台 {platform} 未找到结果")
+            
+            # 合并所有平台结果
+            for result in platform_results:
+                all_results.extend([AccountResponse(**account) for account in result.accounts])
+            
+            print(f"所有平台合并后总结果数: {len(all_results)}")
+            
+            # 按相关性排序
+            if all_results:
+                print("按相关性对所有结果排序...")
+                all_results = self.aggregator.sort_by_relevance(all_results, keyword)
+                print("排序完成")
+            
+            # 分页
+            start_idx = (page - 1) * page_size
+            end_idx = min(start_idx + page_size, len(all_results))
+            
+            print(f"分页: 从 {start_idx} 到 {end_idx} (总数: {len(all_results)})")
+            
+            paged_results = all_results[start_idx:end_idx] if start_idx < len(all_results) else []
+            
+            print(f"当前页结果数: {len(paged_results)}")
+            
+            return SearchResult(
+                accounts=paged_results,
+                total=total,
+                page=page,
+                page_size=page_size,
+                has_more=end_idx < len(all_results)
+            )
+            
+        except Exception as e:
+            print(f"本地降级搜索异常: {str(e)}")
+            logger.error(f"本地降级搜索失败: {e}")
+            return SearchResult(
+                accounts=[],
+                total=0,
+                page=page,
+                page_size=page_size,
+                has_more=False
+            )
+            
+    async def _search_all_platforms_local(self, keyword: str, page: int, page_size: int) -> SearchResult:
+        """
+        在所有平台执行本地数据库搜索（不限制平台）
+        """
+        print(f"执行不限平台的全局搜索: 关键词='{keyword}'")
         try:
             async with AsyncSessionLocal() as db:
                 # 构建搜索条件
+                from sqlalchemy import or_
+                
                 search_conditions = [
-                    Account.platform.in_(platforms),
                     or_(
                         Account.name.ilike(f"%{keyword}%"),
                         Account.description.ilike(f"%{keyword}%")
                     )
                 ]
                 
+                print(f"搜索条件: keyword ILIKE '%{keyword}%' in name/description")
+                
                 # 查询总数
                 count_stmt = select(Account).where(and_(*search_conditions))
+                # 打印实际执行的SQL语句
+                compiled_count = count_stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"COUNT SQL: {str(compiled_count)}")
+                
                 count_result = await db.execute(count_stmt)
-                total = len(count_result.fetchall())
+                result_list = count_result.fetchall()
+                total = len(result_list)
+                
+                print(f"找到总记录数: {total}")
                 
                 # 分页查询
                 stmt = (
@@ -428,8 +753,24 @@ class SearchService(SearchServiceBase):
                     .order_by(Account.follower_count.desc(), Account.updated_at.desc())
                 )
                 
+                # 打印实际执行的SQL语句
+                compiled = stmt.compile(
+                    dialect=db.bind.dialect, 
+                    compile_kwargs={"literal_binds": True}
+                )
+                print(f"SEARCH SQL: {str(compiled)}")
+                
+                print(f"执行分页查询: offset={(page - 1) * page_size}, limit={page_size}")
+                print(f"排序: follower_count DESC, updated_at DESC")
+                
                 result = await db.execute(stmt)
                 accounts = result.scalars().all()
+                
+                print(f"当前页获取记录数: {len(accounts)}")
+                if accounts:
+                    print("数据样例:")
+                    for i, acc in enumerate(accounts[:3]):  # 只打印前3条
+                        print(f"  {i+1}. ID={acc.id}, 名称='{acc.name}', 平台='{acc.platform}'")
                 
                 # 转换为AccountResponse格式
                 account_responses = []
@@ -438,7 +779,7 @@ class SearchService(SearchServiceBase):
                         account_response = AccountResponse.model_validate(account)
                         account_responses.append(account_response)
                     except Exception as e:
-                        logger.warning(f"转换账号数据失败: {e}")
+                        print(f"转换账号数据失败: {e}")
                         continue
                 
                 return SearchResult(
@@ -450,7 +791,8 @@ class SearchService(SearchServiceBase):
                 )
                 
         except Exception as e:
-            logger.error(f"本地数据库搜索失败: {e}")
+            print(f"全局搜索异常: {str(e)}")
+            logger.error(f"全局搜索失败: {e}")
             return SearchResult(
                 accounts=[],
                 total=0,
@@ -500,6 +842,46 @@ class SearchService(SearchServiceBase):
             "timestamp": datetime.now().isoformat()
         }
 
+    def get_supported_platforms(self) -> List[str]:
+        """获取所有支持的平台列表"""
+        platforms = list(self._adapters.keys())
+        
+        # 如果没有注册平台，从数据库获取已有的平台
+        if not platforms:
+            print("没有注册的平台适配器，尝试从数据库获取平台列表...")
+            try:
+                # 使用异步方式获取数据库中的平台
+                async def get_db_platforms():
+                    from app.models.account import Account
+                    from sqlalchemy import select, distinct
+                    from app.db.database import AsyncSessionLocal
+                    
+                    async with AsyncSessionLocal() as db:
+                        query = select(distinct(Account.platform))
+                        result = await db.execute(query)
+                        db_platforms = [row[0] for row in result.fetchall()]
+                        print(f"从数据库获取到的平台列表: {db_platforms}")
+                        return db_platforms
+                
+                # 运行异步函数获取平台列表
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果事件循环正在运行，创建新的事件循环执行任务
+                    platforms = []
+                    print("警告: 无法在运行中的事件循环中执行数据库查询，将使用空平台列表")
+                else:
+                    platforms = loop.run_until_complete(get_db_platforms())
+            except Exception as e:
+                print(f"从数据库获取平台列表失败: {str(e)}")
+                platforms = []
+        
+        return platforms
+
 
 # 创建全局搜索服务实例
 search_service = SearchService()
+
+# 在search_service初始化完成后添加
+print("已注册的平台列表:", search_service.get_supported_platforms())
+print("可用的适配器:", [adapter.__class__.__name__ for adapter in search_service._adapters.values() if adapter.is_enabled])

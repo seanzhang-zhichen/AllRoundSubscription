@@ -66,6 +66,19 @@ class Request {
       (response) => {
         console.log('Response:', response)
         
+        // 添加针对订阅接口的特殊调试
+        if (response.url && response.url.includes('/subscriptions')) {
+          console.log('===== 订阅接口响应详情 =====')
+          console.log('请求URL:', response.url)
+          console.log('状态码:', response.statusCode)
+          console.log('响应数据结构:', JSON.stringify(response.data, null, 2))
+          console.log('数据类型:', typeof response.data)
+          console.log('是否有data属性:', response.data && response.data.data !== undefined)
+          console.log('是否有total属性:', response.data && response.data.total !== undefined)
+          console.log('是否有code属性:', response.data && response.data.code !== undefined)
+          console.log('===== 订阅接口响应结束 =====')
+        }
+        
         // 检查HTTP状态码
         if (response.statusCode >= 200 && response.statusCode < 300) {
           const data = response.data
@@ -75,9 +88,14 @@ class Request {
             // 对于分页响应，返回完整的响应对象（包含data, total, page等）
             // 对于普通响应，返回data字段
             if (data.total !== undefined && data.page !== undefined) {
+              console.log('检测到分页响应，保留完整响应对象')
               return data // 返回完整的分页响应
-            } else {
+            } else if (data.data !== undefined) {
+              console.log('检测到普通响应，返回data字段')
               return data.data // 返回数据部分
+            } else {
+              console.log('无标准结构，返回整个响应')
+              return data
             }
           } else if (data && data.code !== undefined) {
             return Promise.reject(new Error(data.message || '请求失败'))

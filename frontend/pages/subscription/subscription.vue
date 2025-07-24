@@ -11,7 +11,7 @@
         <text class="title">我的订阅</text>
         <view class="subscription-count" :class="{ 'limit-reached': isSubscriptionLimitReached }">
           <text class="count-text">
-            已订阅: {{ userLimits.current_subscriptions }}/{{ userLimits.subscription_limit }}
+            已订阅: {{ subscriptions.length }}/{{ userLimits.subscription_limit }}
           </text>
         </view>
       </view>
@@ -43,7 +43,7 @@
       </view>
 
       <!-- 订阅列表 -->
-      <view v-if="subscriptions.length > 0" class="subscription-list">
+      <view v-if="!loading && subscriptions.length > 0" class="subscription-list">
         <!-- 按平台分组显示 -->
         <view v-for="(platformSubs, platform) in subscriptionsByPlatform" :key="platform" class="platform-group">
           <view class="platform-header">
@@ -78,7 +78,8 @@
 
               <!-- 操作按钮 -->
               <view v-if="!batchMode" class="action-buttons">
-                <button class="btn btn-danger btn-sm" @click.stop="handleUnsubscribe(subscription)">
+                <button class="btn btn-danger btn-sm" @click.stop="handleUnsubscribe(subscription)" 
+                       :disabled="subscriptionStore.isAccountLoading(subscription.account.id)">
                   <text class="btn-text">取消订阅</text>
                 </button>
               </view>
@@ -95,7 +96,7 @@
       </view>
 
       <!-- 空状态 -->
-      <Empty v-else icon="subscription" text="还没有订阅任何博主" :show-action="true" action-text="去搜索博主"
+      <Empty v-else-if="!loading && subscriptions.length === 0" icon="subscription" text="还没有订阅任何博主" :show-action="true" action-text="去搜索博主"
         @action="handleNavigateToSearch" />
     </view>
 
@@ -137,10 +138,11 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { onPullDownRefresh } from '@dcloudio/uni-app'
+import { ref, computed, onMounted, onActivated } from 'vue'
+import { onPullDownRefresh, onShow, onLoad } from '@dcloudio/uni-app'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useUserStore } from '@/stores/user'
+import { useAuthStore } from '@/stores/auth'
 import Loading from '@/components/Loading.vue'
 import Empty from '@/components/Empty.vue'
 import { createPageState, enhancePageLifecycle } from '@/utils/pageState'
@@ -152,10 +154,37 @@ export default {
     Loading,
     Empty
   },
+  onLoad() {
+    console.log('====== 订阅页面加载(onLoad) ======')
+    // 在页面加载完成后立即初始化数据
+    if (this.loadInitialData) {
+      this.loadInitialData()
+    }
+  },
+  onShow() {
+    console.log('====== 订阅页面显示(onShow) ======')
+    // 每次显示页面时检查数据状态
+    if(this.subscriptions && this.subscriptions.length) {
+      console.log('订阅页面onShow: 当前已有数据，数量:', this.subscriptions.length)
+      // 即使已有数据，也刷新一次，确保数据最新
+      if (this.refreshSubscriptions) {
+        console.log('订阅页面onShow: 尽管已有数据，仍然刷新确保数据最新')
+        this.refreshSubscriptions()
+      }
+    } else {
+      console.log('订阅页面onShow: 无数据或数据为空，尝试加载数据')
+      // 如果没有数据，尝试加载数据
+      if (!this.loading && this.loadInitialData) {
+        this.loadInitialData()
+      }
+    }
+  },
   setup() {
+    console.log('====== 订阅页面setup函数执行 ======')
     // Store实例
     const subscriptionStore = useSubscriptionStore()
     const userStore = useUserStore()
+    const authStore = useAuthStore()
 
     // 页面状态管理器
     const pageState = createPageState({
@@ -167,10 +196,76 @@ export default {
     const batchMode = ref(false)
     const selectedSubscriptions = ref([])
     const showUpgrade = ref(false)
+    const initialLoadComplete = ref(false) 
+    
+    // 计算属性
+    const isLoggedIn = computed(() => authStore.isLoggedIn)
+    
+    // 添加生命周期钩子
+    onMounted(() => {
+      console.log('====== 订阅页面已挂载(onMounted) ======')
+      // 不需要在onMounted中调用loadInitialData，因为已经在onLoad中调用了
+    })
+    
+    onActivated(() => {
+      console.log('====== 订阅页面已激活(onActivated) ======')
+      console.log('当前订阅数量:', subscriptionStore.subscriptions.length)
+      console.log('onActivated中判断是否需要刷新数据')
+      
+      // 仅当登录状态有效时刷新数据，避免重复登录检查
+      if (isLoggedIn.value && initialLoadComplete.value) {
+        loadSubscriptions(true)
+      }
+    })
+
+    // 初始加载处理
+    const loadInitialData = async () => {
+      console.log('===== 开始执行初始化加载 =====')
+      // 首先检查登录状态
+      if (isLoggedIn.value) {
+        console.log('用户已登录，直接加载订阅列表')
+        await loadSubscriptions(true)
+        initialLoadComplete.value = true
+      } else {
+        console.log('用户未登录，尝试进行登录状态验证')
+        const loginSuccess = await authStore.enhancedLoginCheck()
+        
+        if (loginSuccess) {
+          console.log('登录状态验证成功，加载订阅列表')
+          await loadSubscriptions(true)
+          initialLoadComplete.value = true
+        } else {
+          console.log('登录状态验证失败，显示登录提示')
+          uni.showModal({
+            title: '提示',
+            content: '请先登录后使用此功能',
+            showCancel: true,
+            cancelText: '取消',
+            confirmText: '去登录',
+            success: (res) => {
+              if (res.confirm) {
+                uni.navigateTo({
+                  url: '/pages/login/login'
+                })
+              }
+            }
+          })
+        }
+      }
+    }
 
     // 计算属性
-    const subscriptions = computed(() => subscriptionStore.subscriptions)
-    const subscriptionsByPlatform = computed(() => subscriptionStore.subscriptionsByPlatform)
+    const subscriptions = computed(() => {
+      const subs = subscriptionStore.subscriptions
+      console.log('计算属性subscriptions被访问, 订阅数量:', subs.length)
+      return subs
+    })
+    const subscriptionsByPlatform = computed(() => {
+      console.log('计算属性subscriptionsByPlatform被访问')
+      const grouped = subscriptionStore.subscriptionsByPlatform
+      console.log('分组后平台数量:', Object.keys(grouped).length)
+      return grouped
+    })
     const userLimits = computed(() => userStore.userLimits)
     const isSubscriptionLimitReached = computed(() => userStore.isSubscriptionLimitReached)
     const hasMore = computed(() => subscriptionStore.pagination.hasMore)
@@ -182,8 +277,7 @@ export default {
         'wechat': '微信公众号',
         'weibo': '微博',
         'twitter': 'Twitter',
-        'douyin': '抖音',
-        'xiaohongshu': '小红书'
+        'zhihu': '知乎'
       }
       return platformMap[platform] || platform
     }
@@ -200,17 +294,39 @@ export default {
 
     // 加载订阅列表
     const loadSubscriptions = async (refresh = false) => {
+      console.log('===== 调用loadSubscriptions函数开始 =====')
+      console.log('参数 refresh:', refresh)
+      console.log('调用前状态 - loading:', pageState.state.loading)
+      console.log('调用前状态 - 订阅数量:', subscriptionStore.subscriptions.length)
       try {
         await pageState.executeAsync(async () => {
+          console.log('===== 开始执行订阅列表获取逻辑 =====')
+          console.log('开始获取订阅数据，是否刷新:', refresh)
           await subscriptionStore.fetchSubscriptions(refresh)
+          console.log('订阅列表API调用成功')
+          console.log('订阅列表获取完成，当前列表长度:', subscriptionStore.subscriptions.length)
+          
           // 同时更新用户限制信息
+          console.log('开始获取用户限制信息')
           await userStore.fetchUserLimits()
+          console.log('用户限制信息获取完成:', JSON.stringify(userStore.userLimits))
         }, {
           errorMessage: '加载订阅列表失败',
           showLoading: refresh
         })
+        console.log('pageState.executeAsync执行完成，无异常')
       } catch (error) {
-        console.error('加载订阅列表失败:', error)
+        console.error('===== 加载订阅列表失败 =====')
+        console.error('错误对象:', error)
+        console.log('错误消息:', error.message)
+        console.log('错误堆栈:', error.stack)
+        console.log('网络状态:', uni.getNetworkType())
+      } finally {
+        console.log('===== loadSubscriptions执行完成 =====')
+        console.log('最终状态 - loading:', pageState.state.loading)
+        console.log('最终状态 - 错误:', pageState.state.error)
+        console.log('最终状态 - 订阅数量:', subscriptionStore.subscriptions.length)
+        console.log('最终状态 - 空状态判断:', subscriptionStore.subscriptions.length === 0)
       }
     }
 
@@ -223,33 +339,78 @@ export default {
 
     // 刷新订阅列表
     const refreshSubscriptions = async () => {
-      await loadSubscriptions(true)
-      uni.stopPullDownRefresh()
+      console.log('===== 开始刷新订阅列表(refreshSubscriptions) =====')
+      try {
+        console.log('重置订阅商店的分页信息，确保从头开始获取')
+        // 确保刷新时重置分页，确保能获取最新数据
+        subscriptionStore.pagination = {
+          page: 1,
+          size: 20,
+          total: 0,
+          hasMore: true
+        }
+        
+        // 强制刷新数据
+        await loadSubscriptions(true)
+        
+        // 在刷新后检查并打印数据
+        console.log('刷新完成，检查数据：订阅数量=', subscriptionStore.subscriptions.length)
+        console.log('分组后数据:', Object.keys(subscriptionStore.subscriptionsByPlatform).length, '个平台')
+        
+        // 如果刷新后依然没有数据但API返回了数据，可能是UI没有更新
+        if (subscriptionStore.subscriptions.length > 0 && Object.keys(subscriptionStore.subscriptionsByPlatform).length === 0) {
+          console.warn('警告：API返回了数据，但分组结果为空，可能存在数据格式问题')
+          console.log('尝试重新载入页面以解决问题')
+          setTimeout(() => {
+            // 如果在APP中，可以尝试刷新当前页面
+            const pages = getCurrentPages()
+            const currentPage = pages[pages.length - 1]
+            if (currentPage && currentPage.route.includes('subscription')) {
+              uni.redirectTo({
+                url: '/pages/subscription/subscription'
+              })
+            }
+          }, 500)
+        }
+      } catch (error) {
+        console.error('刷新订阅列表失败:', error)
+      } finally {
+        console.log('停止下拉刷新动画')
+        uni.stopPullDownRefresh()
+        console.log('===== 刷新订阅列表完成 =====')
+      }
     }
 
     // 加载更多
     const loadMore = async () => {
-      if (!hasMore.value || loading.value) return
-      await loadSubscriptions(false)
+      console.log('===== 尝试加载更多订阅(loadMore) =====')
+      console.log('当前状态 - hasMore:', hasMore.value, '| loading:', loading.value)
+      
+      if (!hasMore.value || loading.value) {
+        console.log('不满足加载条件，直接返回')
+        return
+      }
+      
+      try {
+        console.log('开始执行加载更多')
+        await loadSubscriptions(false)
+        console.log('加载更多完成')
+      } catch (error) {
+        console.error('加载更多失败:', error)
+      } finally {
+        console.log('===== 加载更多操作结束 =====')
+      }
     }
 
     // 处理取消订阅
     const handleUnsubscribe = async (subscription) => {
-      uni.showModal({
-        title: '确认取消订阅',
-        content: `确定要取消订阅「${subscription.account.name}」吗？`,
-        success: async (res) => {
-          if (res.confirm) {
-            try {
-              await subscriptionStore.unsubscribeAccount(subscription.id)
-              // 更新用户限制信息
-              await userStore.fetchUserLimits()
-            } catch (error) {
-              console.error('取消订阅失败:', error)
-            }
-          }
-        }
-      })
+      try {
+        await subscriptionStore.unsubscribeAccount(subscription.id)
+        // 更新用户限制信息
+        await userStore.fetchUserLimits()
+      } catch (error) {
+        console.error('取消订阅失败:', error)
+      }
     }
 
     // 批量模式切换
@@ -339,10 +500,8 @@ export default {
 
     // 页面初始化
     onMounted(async () => {
-      // 检查登录状态
-      checkLoginAndNavigate(async () => {
-        await loadSubscriptions(true)
-      })
+      console.log('订阅页面挂载，准备加载数据')
+      // 检查已在onLoad中完成，这里不需要重复检查
     })
 
     // 注册生命周期钩子
@@ -360,6 +519,8 @@ export default {
       batchMode,
       selectedSubscriptions,
       showUpgrade,
+      isLoggedIn,
+      subscriptionStore,
 
       // 方法
       retry,
@@ -375,6 +536,9 @@ export default {
       upgradeMembership,
       getPlatformName,
       formatFollowerCount,
+      loadInitialData,
+      loadSubscriptions,
+      refreshSubscriptions,
 
       // 计算属性
       canRetry: pageState.canRetry

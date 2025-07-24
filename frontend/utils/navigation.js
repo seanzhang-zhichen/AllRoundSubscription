@@ -2,6 +2,7 @@
  * 页面导航工具类
  * 提供统一的页面跳转和导航管理功能
  */
+import { requireAuth } from './routeGuard'
 
 /**
  * 跳转到登录页面
@@ -97,8 +98,6 @@ export const reLaunch = (url) => {
  * @param {Object} options - 配置选项
  */
 export const checkLoginAndNavigate = (callback, options = {}) => {
-  const { requireAuth } = require('./routeGuard')
-  
   return requireAuth(callback, {
     showModal: true,
     modalTitle: '提示',

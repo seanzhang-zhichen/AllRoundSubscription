@@ -2,8 +2,9 @@
 搜索相关API接口
 """
 import time
+import traceback
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, get_current_user
@@ -30,7 +31,7 @@ router = APIRouter()
 
 @router.get("/accounts", response_model=DataResponse[SearchResponse], summary="搜索博主账号")
 async def search_accounts(
-    keyword: str = Query(..., min_length=1, max_length=100, description="搜索关键词"),
+    keyword: Optional[str] = Query(None, min_length=1, max_length=100, description="搜索关键词，为空时获取所有博主"),
     platforms: Optional[str] = Query(None, description="指定平台列表，用逗号分隔"),
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页大小"),
@@ -50,9 +51,18 @@ async def search_accounts(
     try:
         start_time = time.time()
         
+        # 打印详细的请求参数
+        print("="*50)
+        print("搜索博主请求参数:")
+        print(f"关键词: '{keyword}'")
+        print(f"平台列表: {platforms}")
+        print(f"页码: {page}, 每页大小: {page_size}")
+        print(f"用户ID: {current_user.id}")
+        print("="*50)
+        
         # 解析平台列表
         platform_list = None
-        if platforms:
+        if platforms and platforms.lower() != 'undefined':
             platform_list = [p.strip() for p in platforms.split(',') if p.strip()]
             # 验证平台有效性
             valid_platforms = [p.value for p in Platform]
@@ -63,16 +73,42 @@ async def search_accounts(
                         detail=f"不支持的平台类型: {platform}，支持的平台: {valid_platforms}"
                     )
         
-        # 执行搜索
-        search_result = await search_service.search_accounts(
-            keyword=keyword.strip(),
-            platforms=platform_list,
-            page=page,
-            page_size=page_size
-        )
+        # 执行搜索或获取所有博主
+        if keyword and keyword.strip():
+            print(f"执行关键词搜索: '{keyword.strip()}'")
+            search_result = await search_service.search_accounts(
+                keyword=keyword.strip(),
+                platforms=platform_list,
+                page=page,
+                page_size=page_size
+            )
+        else:
+            print("获取所有博主")
+            # 获取所有博主
+            search_result = await search_service.get_all_accounts(
+                platforms=platform_list,
+                page=page,
+                page_size=page_size
+            )
         
         # 计算搜索耗时
         search_time_ms = int((time.time() - start_time) * 1000)
+        
+        # 打印详细的搜索结果
+        print("="*50)
+        print("搜索结果:")
+        print(f"总结果数: {search_result.total}")
+        print(f"当前页结果数: {len(search_result.accounts)}")
+        print(f"耗时: {search_time_ms}ms")
+        
+        if search_result.accounts:
+            print(f"首条结果: {search_result.accounts[0].name} (平台: {search_result.accounts[0].platform})")
+            print("所有结果ID列表:")
+            for i, account in enumerate(search_result.accounts):
+                print(f"  {i+1}. ID: {account.id}, 名称: {account.name}, 平台: {account.platform}")
+        else:
+            print("没有找到匹配的结果!")
+        print("="*50)
         
         # 构建响应
         response = SearchResponse(
@@ -85,22 +121,26 @@ async def search_accounts(
             search_time_ms=search_time_ms
         )
         
+        action = "搜索博主" if keyword and keyword.strip() else "获取所有博主"
         logger.info(
-            f"用户 {current_user.id} 搜索博主: 关键词='{keyword}', "
+            f"用户 {current_user.id} {action}: 关键词='{keyword or '无'}', "
             f"平台={platform_list}, 结果数={search_result.total}, "
             f"耗时={search_time_ms}ms"
         )
         
-        return DataResponse.success(
+        return DataResponse(
             data=response,
             message=f"搜索完成，找到 {search_result.total} 个结果"
         )
         
     except BusinessException as e:
         logger.warning(f"搜索业务异常: {e.message}")
+        print(f"搜索业务异常: {e.message}")
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         logger.error(f"搜索服务异常: {str(e)}", exc_info=True)
+        print(f"搜索服务异常: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="搜索服务暂时不可用")
 
 
@@ -162,7 +202,7 @@ async def search_accounts_by_platform(
             f"耗时={search_time_ms}ms"
         )
         
-        return DataResponse.success(
+        return DataResponse(
             data=response,
             message=f"在 {platform} 平台找到 {search_result.total} 个结果"
         )
@@ -188,17 +228,23 @@ async def get_supported_platforms(
         # 获取平台信息
         platform_names = {
             "wechat": "微信公众号",
+            "weixin": "微信公众号",
             "weibo": "微博",
             "twitter": "推特",
+            "bilibili": "哔哩哔哩",
             "douyin": "抖音",
+            "zhihu": "知乎",
             "xiaohongshu": "小红书"
         }
         
         platform_descriptions = {
             "wechat": "微信公众号平台，支持搜索公众号账号",
+            "weixin": "微信公众号平台，支持搜索公众号账号",
             "weibo": "新浪微博平台，支持搜索微博用户",
             "twitter": "推特平台，支持搜索推特用户",
+            "bilibili": "哔哩哔哩平台，支持搜索UP主",
             "douyin": "抖音平台，支持搜索抖音创作者",
+            "zhihu": "知乎平台，支持搜索知乎用户",
             "xiaohongshu": "小红书平台，支持搜索小红书博主"
         }
         
@@ -230,7 +276,7 @@ async def get_supported_platforms(
         
         logger.info(f"用户 {current_user.id} 获取支持的平台列表")
         
-        return DataResponse.success(
+        return DataResponse(
             data=response,
             message=f"获取成功，共支持 {enabled_count} 个平台"
         )
@@ -263,7 +309,7 @@ async def get_search_statistics(
         
         logger.info(f"用户 {current_user.id} 获取搜索统计信息")
         
-        return DataResponse.success(
+        return DataResponse(
             data=response,
             message="获取搜索统计信息成功"
         )
@@ -314,7 +360,47 @@ async def get_account_by_platform_id(
             f"平台={platform}, 账号ID={account_id}"
         )
         
-        return DataResponse.success(
+        return DataResponse(
+            data=account,
+            message="获取账号信息成功"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取账号信息异常: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取账号信息失败")
+
+
+@router.get("/accounts/by-id/{account_id}", response_model=DataResponse[AccountResponse], summary="根据账号ID获取账号信息")
+async def get_account_by_id(
+    account_id: int = Path(..., description="账号ID"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    根据账号ID获取账号详细信息
+    
+    - **account_id**: 账号ID
+    
+    返回账号详细信息
+    """
+    try:
+        # 获取账号信息
+        account = await search_service.get_account_by_id(account_id, db)
+        
+        if not account:
+            raise HTTPException(
+                status_code=404,
+                detail=f"未找到账号 {account_id}"
+            )
+        
+        logger.info(
+            f"用户 {current_user.id} 获取账号信息: "
+            f"账号ID={account_id}"
+        )
+        
+        return DataResponse(
             data=account,
             message="获取账号信息成功"
         )

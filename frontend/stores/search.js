@@ -62,15 +62,11 @@ export const useSearchStore = defineStore('search', {
   
   actions: {
     /**
-     * 搜索博主
+     * 搜索博主或获取所有博主
      */
     async searchAccounts(keyword, platforms = [], refresh = false) {
       try {
-        if (!keyword || keyword.trim() === '') {
-          throw new Error('搜索关键词不能为空')
-        }
-        
-        const trimmedKeyword = keyword.trim()
+        const trimmedKeyword = keyword ? keyword.trim() : ''
         
         if (refresh) {
           this.pagination.page = 1
@@ -86,26 +82,36 @@ export const useSearchStore = defineStore('search', {
         this.currentKeyword = trimmedKeyword
         this.selectedPlatforms = platforms
         
-        // 添加到搜索历史
-        const appStore = useAppStore()
-        appStore.addSearchHistory(trimmedKeyword)
+        // 只有在有关键词时才添加到搜索历史
+        if (trimmedKeyword) {
+          const appStore = useAppStore()
+          appStore.addSearchHistory(trimmedKeyword)
+        }
         
-        const data = await request.get('/search/accounts', {
-          keyword: trimmedKeyword,
+        // 构建请求参数
+        const params = {
           platforms: platforms.length > 0 ? platforms.join(',') : undefined,
           page: this.pagination.page,
-          size: this.pagination.size
-        })
+          page_size: this.pagination.size
+        }
+        
+        // 只有在有关键词时才添加keyword参数
+        if (trimmedKeyword) {
+          params.keyword = trimmedKeyword
+        }
+        
+        const response = await request.get('/search/accounts', params)
+        const data = response.data || response // 处理可能的嵌套数据结构
         
         if (refresh) {
-          this.searchResults = data.items || []
+          this.searchResults = data.accounts || []
         } else {
-          this.searchResults.push(...(data.items || []))
+          this.searchResults.push(...(data.accounts || []))
         }
         
         // 更新分页信息
         this.pagination.total = data.total || 0
-        this.pagination.hasMore = (data.items || []).length === this.pagination.size
+        this.pagination.hasMore = (data.accounts || []).length === this.pagination.size
         this.pagination.page += 1
         
         // 更新搜索统计
@@ -126,7 +132,6 @@ export const useSearchStore = defineStore('search', {
      * 刷新搜索结果
      */
     async refreshSearch() {
-      if (!this.currentKeyword) return
       return this.searchAccounts(this.currentKeyword, this.selectedPlatforms, true)
     },
     
@@ -134,7 +139,6 @@ export const useSearchStore = defineStore('search', {
      * 加载更多搜索结果
      */
     async loadMoreResults() {
-      if (!this.currentKeyword) return
       return this.searchAccounts(this.currentKeyword, this.selectedPlatforms, false)
     },
     
@@ -143,9 +147,8 @@ export const useSearchStore = defineStore('search', {
      */
     async filterByPlatforms(platforms) {
       this.selectedPlatforms = platforms
-      if (this.currentKeyword) {
-        return this.searchAccounts(this.currentKeyword, platforms, true)
-      }
+      // 无论是否有关键词，都重新搜索
+      return this.searchAccounts(this.currentKeyword, platforms, true)
     },
     
     /**
@@ -196,6 +199,15 @@ export const useSearchStore = defineStore('search', {
     updateSearchStats(data) {
       this.searchStats.totalResults = data.total || 0
       this.searchStats.platformResults = data.platform_stats || {}
+      
+      // 如果没有平台统计数据，根据当前结果计算
+      if (!data.platform_stats && this.searchResults.length > 0) {
+        const platformCounts = {}
+        this.searchResults.forEach(account => {
+          platformCounts[account.platform] = (platformCounts[account.platform] || 0) + 1
+        })
+        this.searchStats.platformResults = platformCounts
+      }
     },
     
     /**

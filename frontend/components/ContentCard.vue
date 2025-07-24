@@ -63,22 +63,6 @@
         </view>
       </view>
     </view>
-
-    <!-- 文章统计 -->
-    <view class="card-footer" v-if="showStats">
-      <view class="stats-item">
-        <text class="stats-icon">👁</text>
-        <text class="stats-text">{{ formatNumber(article.view_count || 0) }}</text>
-      </view>
-      <view class="stats-item">
-        <text class="stats-icon">👍</text>
-        <text class="stats-text">{{ formatNumber(article.like_count || 0) }}</text>
-      </view>
-      <view class="stats-item">
-        <text class="stats-icon">💬</text>
-        <text class="stats-text">{{ formatNumber(article.comment_count || 0) }}</text>
-      </view>
-    </view>
   </view>
 </template>
 
@@ -437,27 +421,5 @@ export default {
   color: white;
   font-size: 28rpx;
   font-weight: 600;
-}
-
-.card-footer {
-  display: flex;
-  justify-content: space-around;
-  padding-top: 20rpx;
-  border-top: 1rpx solid #f0f0f0;
-}
-
-.stats-item {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.stats-icon {
-  font-size: 24rpx;
-}
-
-.stats-text {
-  font-size: 24rpx;
-  color: #999;
 }
 </style>
