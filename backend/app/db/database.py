@@ -20,6 +20,19 @@ if "sqlite" in settings.database_url.lower():
             "check_same_thread": False,
         }
     )
+elif "mysql" in settings.database_url.lower():
+    # MySQL配置
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.ENABLE_SQL_LOGGING,  # 通过配置控制SQL日志输出
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        connect_args={
+            "charset": "utf8mb4",
+        }
+    )
 else:
     # PostgreSQL配置
     engine = create_async_engine(

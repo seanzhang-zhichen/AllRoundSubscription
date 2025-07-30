@@ -11,6 +11,7 @@ from app.schemas.common import PaginatedResponse
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.services.image import image_service
+from app.services.search import search_service
 from app.services.platform import platform_service
 from app.services.refresh import refresh_service
 from app.core.logging import get_logger
@@ -52,7 +53,8 @@ async def get_user_feed(
 
 @router.get("/articles/{article_id}", response_model=ArticleDetail)
 async def get_article_detail(
-    article_id: int = Path(..., description="文章ID"),
+    article_id: str = Path(..., description="文章ID"),
+    platform: str = Query(..., description="平台标识"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -68,7 +70,8 @@ async def get_article_detail(
     result = await content_service.get_article_detail(
         db=db,
         article_id=article_id,
-        user_id=current_user.id
+        user_id=current_user.id,
+        platform=platform
     )
     
     return result
@@ -76,7 +79,8 @@ async def get_article_detail(
 
 @router.get("/accounts/{account_id}/articles", response_model=PaginatedResponse[ArticleWithAccount])
 async def get_articles_by_account(
-    account_id: int = Path(..., description="账号ID"),
+    account_id: str = Path(..., description="账号ID"),
+    platform: str = Query(..., description="平台标识"),
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=50, description="每页大小"),
     current_user: User = Depends(get_current_user),
@@ -88,14 +92,16 @@ async def get_articles_by_account(
     获取指定博主账号的所有文章，按发布时间倒序排列。
     
     - **account_id**: 账号ID
+    - **platform**: 平台标识 (wechat, weibo, twitter, etc.)
     - **page**: 页码，从1开始
     - **page_size**: 每页大小，最大50
     """
-    logger.info(f"用户 {current_user.id} 获取账号 {account_id} 的文章列表")
+    logger.info(f"用户 {current_user.id} 获取账号 {account_id} 的文章列表，平台: {platform}")
     
     result = await content_service.get_articles_by_account(
         db=db,
         account_id=account_id,
+        platform=platform,
         page=page,
         page_size=page_size
     )

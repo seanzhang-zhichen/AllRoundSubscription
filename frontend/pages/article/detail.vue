@@ -18,11 +18,15 @@
             <text class="author-name">{{ article.account?.name || '未知博主' }}</text>
             <text class="publish-time">{{ formatTime(article.publish_time) }}</text>
           </view>
-          <view class="platform-tag" :class="`platform-${article.account?.platform}`">
-            <text class="platform-text">{{ getPlatformName(article.account?.platform) }}</text>
-          </view>
         </view>
         <view class="header-actions">
+           <view 
+            class="platform-tag" 
+            :class="`platform-${article.account?.platform}`"
+            v-if="article.account?.platform"
+          >
+            <text class="platform-text">{{ getPlatformName(article.account?.platform) }}</text>
+          </view>
           <view class="action-btn" @click="handleFavorite">
             <text class="action-icon" :class="{ 'favorited': article.is_favorited }">♥</text>
           </view>
@@ -65,7 +69,7 @@
             v-for="relatedArticle in relatedArticles" 
             :key="relatedArticle.id"
             class="related-item"
-            @click="navigateToArticle(relatedArticle.id)"
+            @click="navigateToArticle(relatedArticle.id, relatedArticle.account?.platform)"
           >
             <image 
               :src="relatedArticle.images?.[0] || '/static/empty-content.png'" 
@@ -174,6 +178,7 @@ export default {
     })
 
     const articleId = ref('')
+    const platform = ref('')
     const article = ref(null)
     const relatedArticles = ref([])
 
@@ -181,17 +186,17 @@ export default {
     const retry = async () => {
       await pageState.retry(async () => {
         if (articleId.value) {
-          await loadArticleDetail(articleId.value)
+          await loadArticleDetail(articleId.value, platform.value)
         }
       })
     }
 
     // 加载文章详情
-    const loadArticleDetail = async (id) => {
+    const loadArticleDetail = async (id, plat) => {
       await pageState.executeAsync(async () => {
         try {
           // 获取文章详情
-          const articleData = await contentStore.fetchArticleDetail(id)
+          const articleData = await contentStore.fetchArticleDetail(id, plat)
           article.value = articleData
           
           // 标记文章为已读
@@ -212,12 +217,13 @@ export default {
     // 加载相关文章推荐
     const loadRelatedArticles = async (currentArticle) => {
       try {
-        if (currentArticle.account?.id) {
+        if (currentArticle.account?.id && currentArticle.account?.platform) {
           // 获取同一博主的其他文章
           const accountArticles = await contentStore.fetchAccountArticles(
             currentArticle.account.id, 
             1, 
-            5
+            5,
+            currentArticle.account.platform
           )
           
           // 过滤掉当前文章
@@ -276,9 +282,9 @@ export default {
     }
 
     // 导航到其他文章
-    const navigateToArticle = (id) => {
+    const navigateToArticle = (id, plat) => {
       uni.navigateTo({
-        url: `/pages/article/detail?id=${id}`
+        url: `/pages/article/detail?id=${id}&platform=${plat}`
       })
     }
 
@@ -378,7 +384,8 @@ export default {
     onLoad((options) => {
       if (options.id) {
         articleId.value = options.id
-        loadArticleDetail(options.id)
+        platform.value = options.platform
+        loadArticleDetail(options.id, options.platform)
         
         // 处理分享链接点击
         wechatShareManager.handleShareLinkClick(options)
@@ -474,6 +481,7 @@ export default {
 
 .author-details {
   flex: 1;
+  margin-right: 20rpx;
 }
 
 .author-name {
@@ -532,8 +540,14 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 30rpx;
-  background-color: #f5f5f5;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+  transition: all 0.2s;
+}
+
+.action-btn:active {
+  transform: scale(0.9);
+  background-color: #e0e0e0;
 }
 
 .action-icon {
@@ -547,24 +561,24 @@ export default {
 
 /* 文章内容 */
 .article-content {
-  padding: 30rpx;
+  padding: 40rpx 30rpx;
 }
 
 .article-title {
   display: block;
-  font-size: 36rpx;
+  font-size: 44rpx;
   font-weight: bold;
-  color: #333;
+  color: #2c3e50;
   line-height: 1.4;
-  margin-bottom: 30rpx;
+  margin-bottom: 40rpx;
 }
 
 .article-summary {
   display: block;
   font-size: 28rpx;
   color: #666;
-  line-height: 1.5;
-  margin-bottom: 30rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
   padding: 20rpx;
   background-color: #f8f9fa;
   border-radius: 12rpx;
@@ -572,14 +586,15 @@ export default {
 }
 
 .article-body {
-  line-height: 1.6;
-  margin-bottom: 30rpx;
+  line-height: 1.8;
+  margin-bottom: 40rpx;
 }
 
 .rich-content {
-  font-size: 30rpx;
+  font-size: 32rpx;
   color: #333;
   line-height: 1.8;
+  word-wrap: break-word;
 }
 
 /* 图片展示 */
@@ -709,20 +724,30 @@ export default {
   flex: 1;
   margin: 0 10rpx;
   padding: 25rpx;
-  border: 1rpx solid #ddd;
-  border-radius: 10rpx;
-  background-color: white;
+  border: none;
+  border-radius: 50rpx;
+  background-color: #f0f0f0;
   font-size: 28rpx;
+  font-weight: bold;
   display: flex;
   align-items: center;
   justify-content: center;
   width: auto;
   height: auto;
+  transition: background-color 0.2s;
+}
+
+.article-actions .action-btn:active {
+  background-color: #e0e0e0;
 }
 
 .article-actions .action-btn.primary {
   background-color: #007aff;
-  border-color: #007aff;
+  color: white;
+}
+
+.article-actions .action-btn.primary:active {
+  background-color: #0056b3;
 }
 
 .article-actions .action-btn.primary .action-text {

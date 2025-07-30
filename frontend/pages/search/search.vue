@@ -288,7 +288,7 @@ export default {
     const viewAccountDetail = (account) => {
       console.log('查看博主详情:', account)
       uni.navigateTo({
-        url: `/pages/account/detail?id=${account.id}`
+        url: `/pages/account/detail?id=${account.id}&platform=${account.platform}`
       })
     }
 

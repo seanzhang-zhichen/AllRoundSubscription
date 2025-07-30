@@ -181,21 +181,27 @@ export const useContentStore = defineStore('content', {
     /**
      * 获取文章详情
      */
-    async fetchArticleDetail(articleId) {
+    async fetchArticleDetail(articleId, platform) {
       try {
+        const cacheKey = `${articleId}-${platform || 'default'}`;
         // 先检查缓存
-        if (this.articleCache.has(articleId)) {
-          return this.articleCache.get(articleId)
+        if (this.articleCache.has(cacheKey)) {
+          return this.articleCache.get(cacheKey);
         }
 
-        this.loading = true
+        this.loading = true;
 
-        const data = await request.get(`/content/articles/${articleId}`)
+        const params = {};
+        if (platform) {
+            params.platform = platform;
+        }
+
+        const data = await request.get(`/content/articles/${articleId}`, params);
 
         // 缓存文章详情
-        this.articleCache.set(articleId, data)
+        this.articleCache.set(cacheKey, data);
 
-        return data
+        return data;
 
       } catch (error) {
         console.error('获取文章详情失败:', error)
@@ -222,13 +228,14 @@ export const useContentStore = defineStore('content', {
     /**
      * 获取指定博主的文章
      */
-    async fetchAccountArticles(accountId, page = 1, size = 20) {
+    async fetchAccountArticles(accountId, page = 1, size = 20, platform = '') {
       try {
         this.loading = true
 
         const data = await request.get('/content/accounts/' + accountId + '/articles', {
           page,
-          page_size: size
+          page_size: size,
+          platform
         })
 
         return data

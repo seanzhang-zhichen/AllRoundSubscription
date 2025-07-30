@@ -13,22 +13,22 @@ def register_all_adapters():
     """注册所有平台适配器"""
     
     # 注册Mock适配器（用于测试和演示）
-    mock_wechat = MockPlatformAdapter(Platform.WECHAT, enabled=True)
-    mock_weibo = MockPlatformAdapter(Platform.WEIBO, enabled=True)
-    mock_twitter = MockPlatformAdapter(Platform.TWITTER, enabled=True)
+    # mock_wechat = MockPlatformAdapter(Platform.WECHAT, enabled=True)
+    # mock_weibo = MockPlatformAdapter(Platform.WEIBO, enabled=True)
+    # mock_twitter = MockPlatformAdapter(Platform.TWITTER, enabled=True)
     
-    search_service.register_adapter(mock_wechat)
-    search_service.register_adapter(mock_weibo)
-    search_service.register_adapter(mock_twitter)
+    # search_service.register_adapter(mock_wechat)
+    # search_service.register_adapter(mock_weibo)
+    # search_service.register_adapter(mock_twitter)
     
     # 注册真实平台适配器
     wechat_adapter = WeChatAdapter()
-    weibo_adapter = WeiboAdapter()
-    twitter_adapter = TwitterAdapter()
+    # weibo_adapter = WeiboAdapter()
+    # twitter_adapter = TwitterAdapter()
     
     search_service.register_adapter(wechat_adapter)
-    search_service.register_adapter(weibo_adapter)
-    search_service.register_adapter(twitter_adapter)
+    # search_service.register_adapter(weibo_adapter)
+    # search_service.register_adapter(twitter_adapter)
 
 
 def get_registered_platforms():

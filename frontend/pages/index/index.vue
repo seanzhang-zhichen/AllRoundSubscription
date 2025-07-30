@@ -203,12 +203,12 @@ export default {
     const navigateToArticle = (article) => {
       checkLoginAndNavigate(() => {
         // 标记文章为已读
-        contentStore.markArticleAsRead(article.id)
+        contentStore.markArticleAsRead(article.id);
         
         // 跳转到文章详情页
-        navigateToArticleDetail(article.id)
-      })
-    }
+        navigateToArticleDetail(article.id, article.account?.platform);
+      });
+    };
 
     // 处理收藏
     const handleFavorite = async (article) => {

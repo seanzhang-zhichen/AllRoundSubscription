@@ -85,6 +85,29 @@ class PlatformAdapter(ABC):
         """
         pass
     
+    @abstractmethod
+    async def get_all_accounts(self) -> List[Dict[str, Any]]:
+        """
+        获取所有账号
+        """
+        pass
+    
+
+    @abstractmethod
+    async def get_all_articles_by_account_id(self, account_id: str) -> List[Dict[str, Any]]:
+        """
+        获取所有文章
+        """
+        pass
+
+    @abstractmethod
+    async def get_article_detail(self, article_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取文章详情
+        """
+        pass
+    
+
     def normalize_account_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         标准化账号数据格式

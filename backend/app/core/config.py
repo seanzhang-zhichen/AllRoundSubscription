@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     WECHAT_APP_ID: str = ""
     WECHAT_APP_SECRET: str = ""
     
+    # 微信RSS API配置
+    WECHAT_RSS_API_URL: str = ""
+    WECHAT_RSS_API_USERNAME: str = ""
+    WECHAT_RSS_API_PASSWORD: str = ""
+    
     # 微信服务号配置
     WECHAT_SERVICE_APP_ID: str = ""
     WECHAT_SERVICE_APP_SECRET: str = ""

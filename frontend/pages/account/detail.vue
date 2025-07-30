@@ -152,10 +152,16 @@ export default {
         const currentPage = pages[pages.length - 1]
         const options = currentPage.options || {}
         
-        accountId.value = parseInt(options.id)
+        accountId.value = options.id
+        const platform = options.platform
         
         if (!accountId.value) {
           throw new Error('缺少博主ID参数')
+        }
+        
+        // 如果URL中包含platform参数，先设置到accountInfo中
+        if (platform) {
+          accountInfo.value = { platform }
         }
         
         // 如果用户已登录，加载订阅列表
@@ -177,7 +183,13 @@ export default {
     // 加载博主信息
     const loadAccountInfo = async () => {
       try {
-        const data = await request.get(`/search/accounts/by-id/${accountId.value}`)
+        // 构建请求参数
+        const params = {}
+        if (accountInfo.value && accountInfo.value.platform) {
+          params.platform = accountInfo.value.platform
+        }
+
+        const data = await request.get(`/search/accounts/by-id/${accountId.value}`, params)
         accountInfo.value = data
       } catch (error) {
         console.error('加载博主信息失败:', error)
@@ -197,7 +209,8 @@ export default {
         
         const response = await request.get(`/content/accounts/${accountId.value}/articles`, {
           page: currentPage.value,
-          page_size: 10
+          page_size: 10,
+          platform: accountInfo.value ? accountInfo.value.platform : ''
         })
         
         // 处理响应数据结构
@@ -264,7 +277,7 @@ export default {
     // 查看文章详情
     const viewArticle = (article) => {
       uni.navigateTo({
-        url: `/pages/article/detail?id=${article.id}`
+        url: `/pages/article/detail?id=${article.id}&platform=${accountInfo.value?.platform}`
       })
     }
 

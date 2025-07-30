@@ -25,6 +25,12 @@ class MockPlatformAdapter(PlatformAdapter):
         """是否启用该平台"""
         return self._enabled
     
+    async def get_all_accounts(self) -> List[Dict[str, Any]]:
+        """
+        获取所有账号
+        """
+        return self._mock_accounts
+    
     def _generate_mock_accounts(self) -> List[Dict[str, Any]]:
         """生成模拟账号数据"""
         base_accounts = [

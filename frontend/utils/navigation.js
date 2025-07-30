@@ -52,16 +52,20 @@ export const navigateToProfile = () => {
 /**
  * 跳转到文章详情页面
  * @param {string|number} articleId - 文章ID
+ * @param {string} platform - 平台标识
  */
-export const navigateToArticleDetail = (articleId) => {
+export const navigateToArticleDetail = (articleId, platform) => {
   if (!articleId) {
-    console.error('文章ID不能为空')
-    return
+    console.error('文章ID不能为空');
+    return;
+  }
+  if (!platform) {
+    console.warn('平台标识为空，建议提供');
   }
   uni.navigateTo({
-    url: `/pages/article/detail?id=${articleId}`
-  })
-}
+    url: `/pages/article/detail?id=${articleId}&platform=${platform || ''}`
+  });
+};
 
 /**
  * 返回上一页

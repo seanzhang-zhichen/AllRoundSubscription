@@ -14,6 +14,7 @@ from app.db.redis import get_redis
 from app.core.exceptions import BusinessException
 from app.services.image import image_service
 from app.services.platform import platform_service
+from app.services.search import search_service
 import json
 import traceback
 from app.core.logging import get_logger
@@ -147,8 +148,9 @@ class ContentService:
     async def get_article_detail(
         self, 
         db: AsyncSession, 
-        article_id: int, 
-        user_id: Optional[int] = None
+        article_id: str, 
+        user_id: Optional[str] = None,
+        platform: str = None
     ) -> ArticleDetail:
         """
         获取文章详情
@@ -170,21 +172,13 @@ class ContentService:
             if cached_result:
                 logger.info(f"从缓存获取文章详情: {article_id}")
                 return cached_result
+
+            article = await search_service.get_article_detail(article_id, platform)
             
-            # 查询文章和账号信息
-            article_query = (
-                select(Article, Account)
-                .join(Account, Article.account_id == Account.id)
-                .where(Article.id == article_id)
-            )
+            if not article:
+                raise BusinessException(message="文章不存在", error_code=404)
             
-            article_result = await db.execute(article_query)
-            article_data = article_result.first()
-            
-            if not article_data:
-                raise BusinessException(message="文章不存在", status_code=404)
-            
-            article, account = article_data
+            account = await search_service.get_account_by_platform_id(platform, article.account_id)
             
             # 检查用户是否已订阅该账号
             is_subscribed = False
@@ -199,7 +193,7 @@ class ContentService:
                 is_subscribed = subscription_result.first() is not None
             
             # 获取相关文章（同一账号的其他文章）
-            related_articles = await self._get_related_articles(db, article.account_id, article.id)
+            # related_articles = await self._get_related_articles(db, article.account_id, article.id)
             
             # 构建详情响应
             article_detail = ArticleDetail(
@@ -217,13 +211,13 @@ class ContentService:
                 updated_at=article.updated_at,
                 image_count=article.image_count,
                 has_images=article.has_images,
-                thumbnail_url=article.get_thumbnail_url(),
+                thumbnail_url=article.thumbnail_url,
                 account_name=account.name,
                 account_platform=account.platform,
                 account_avatar_url=account.avatar_url,
                 platform_display_name=platform_service.get_platform_display_name(account.platform),
                 is_subscribed=is_subscribed,
-                related_articles=related_articles
+                related_articles=[]
             )
             
             # 缓存结果
@@ -236,12 +230,15 @@ class ContentService:
             raise
         except Exception as e:
             logger.error(f"获取文章详情失败: {str(e)}")
+            traceback.print_exc()
             raise BusinessException(message="获取文章详情失败")
+            
     
     async def get_articles_by_account(
         self,
         db: AsyncSession,
-        account_id: int,
+        account_id: str,
+        platform: str,
         page: int = 1,
         page_size: int = 20
     ) -> PaginatedResponse[ArticleWithAccount]:
@@ -258,62 +255,18 @@ class ContentService:
             分页的文章列表
         """
         try:
-            offset = (page - 1) * page_size
-            
-            # 查询文章总数
-            count_query = select(func.count(Article.id)).where(
-                Article.account_id == account_id
-            )
-            total_result = await db.execute(count_query)
-            total = total_result.scalar() or 0
-            
-            # 查询文章列表，联接账号表
-            articles_query = (
-                select(Article, Account)
-                .join(Account, Article.account_id == Account.id)
-                .where(Article.account_id == account_id)
-                .order_by(desc(Article.publish_timestamp))
-                .offset(offset)
-                .limit(page_size)
-            )
-            
-            articles_result = await db.execute(articles_query)
-            articles_data = articles_result.fetchall()
-            
-            # 转换为响应模型
-            articles = []
-            for article, account in articles_data:
-                article_response = ArticleWithAccount(
-                    id=article.id,
-                    account_id=article.account_id,
-                    title=article.title,
-                    url=article.url,
-                    content=article.content,
-                    summary=article.summary,
-                    publish_time=article.publish_time,
-                    publish_timestamp=article.publish_timestamp,
-                    images=article.images or [],
-                    details=article.details or {},
-                    created_at=article.created_at,
-                    updated_at=article.updated_at,
-                    image_count=article.image_count,
-                    has_images=article.has_images,
-                    thumbnail_url=article.get_thumbnail_url(),
-                    account_name=account.name,
-                    account_platform=account.platform,
-                    account_avatar_url=account.avatar_url,
-                    platform_display_name=account.platform_display_name
-                )
-                articles.append(article_response)
-            
+
+            articles = await search_service.get_articles_by_account(db=db, platform=platform, account_id=account_id, page=page, page_size=page_size)
+            logger.info(f"已获取账号 {account_id} 的文章列表，页码: {page}，总数: {len(articles)}")
+            logger.info(f"组装 PaginatedResponse")
             result = PaginatedResponse.create(
                 data=articles,
-                total=total,
+                total=len(articles),
                 page=page,
                 page_size=page_size
             )
             
-            logger.info(f"获取账号 {account_id} 的文章列表，页码: {page}，总数: {total}")
+            logger.info(f"获取账号 {account_id} 的文章列表，页码: {page}，总数: {len(articles)}")
             return result
             
         except Exception as e:

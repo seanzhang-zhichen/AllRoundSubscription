@@ -12,8 +12,10 @@ from app.services.search.aggregator import SearchAggregator
 from app.services.search.exceptions import SearchException, PlatformUnavailableException
 from app.models.account import Account, Platform
 from app.schemas.account import AccountResponse
+from app.schemas.article import ArticleWithAccount
 from app.db.database import AsyncSessionLocal
 from datetime import datetime
+import traceback
 
 logger = get_logger(__name__)
 
@@ -44,83 +46,30 @@ class SearchService(SearchServiceBase):
         Returns:
             SearchResult: 搜索结果
         """
+        # 转换为AccountResponse格式
+
+        if platforms is None:
+            platforms = self.get_supported_platforms()
+            logger.info(f"获取所有平台账号: {platforms}")
+
         try:
-            print("\n=== 获取所有博主账号 ===")
-            print(f"平台筛选: {platforms}")
-            print(f"页码: {page}, 每页大小: {page_size}")
-            
-            async with AsyncSessionLocal() as db:
-                # 构建查询条件
-                conditions = []
-                if platforms:
-                    conditions.append(Account.platform.in_(platforms))
-                
-                # 查询总数
-                if conditions:
-                    count_stmt = select(Account).where(and_(*conditions))
-                else:
-                    count_stmt = select(Account)
-                
-                # 打印实际执行的SQL语句
-                compiled_count = count_stmt.compile(
-                    dialect=db.bind.dialect, 
-                    compile_kwargs={"literal_binds": True}
-                )
-                print(f"获取所有博主COUNT SQL: {str(compiled_count)}")
-                
-                count_result = await db.execute(count_stmt)
-                total = len(count_result.fetchall())
-                
-                print(f"总博主数: {total}")
-                
-                # 分页查询
-                if conditions:
-                    stmt = (
-                        select(Account)
-                        .where(and_(*conditions))
-                        .offset((page - 1) * page_size)
-                        .limit(page_size)
-                        .order_by(Account.follower_count.desc(), Account.updated_at.desc())
-                    )
-                else:
-                    stmt = (
-                        select(Account)
-                        .offset((page - 1) * page_size)
-                        .limit(page_size)
-                        .order_by(Account.follower_count.desc(), Account.updated_at.desc())
-                    )
-                
-                # 打印实际执行的SQL语句
-                compiled = stmt.compile(
-                    dialect=db.bind.dialect, 
-                    compile_kwargs={"literal_binds": True}
-                )
-                print(f"获取所有博主SQL: {str(compiled)}")
-                print(f"分页: offset={(page - 1) * page_size}, limit={page_size}")
-                
-                result = await db.execute(stmt)
-                accounts = result.scalars().all()
-                
-                # 转换为AccountResponse格式
-                account_responses = []
-                for account in accounts:
-                    try:
-                        account_response = AccountResponse.model_validate(account)
-                        account_responses.append(account_response)
-                    except Exception as e:
-                        logger.warning(f"转换账号数据失败: {e}")
-                        continue
-                
-                return SearchResult(
-                    accounts=account_responses,
-                    total=total,
-                    page=page,
-                    page_size=page_size,
-                    has_more=(page * page_size) < total
-                )
+            accounts = []
+            for platform in platforms:
+                adapter = self.get_adapter(platform)
+                if adapter and adapter.is_enabled:
+                    accounts.extend(await adapter.get_all_accounts())
+
+            return SearchResult(
+                accounts=accounts,
+                total=len(accounts),
+                page=page,
+                page_size=page_size,
+                has_more=(page * page_size) < len(accounts)
+            )
                 
         except Exception as e:
             logger.error(f"获取所有博主失败: {e}")
+            logger.error(traceback.format_exc())
             return SearchResult(
                 accounts=[],
                 total=0,
@@ -374,38 +323,21 @@ class SearchService(SearchServiceBase):
         Returns:
             Optional[AccountResponse]: 账号信息，如果不存在返回None
         """
-        # 先从数据库查找
-        async with AsyncSessionLocal() as db:
-            stmt = select(Account).where(
-                and_(
-                    Account.platform == platform,
-                    Account.account_id == account_id
-                )
-            )
-            result = await db.execute(stmt)
-            account = result.scalar_one_or_none()
-            
-            if account:
-                return AccountResponse.model_validate(account)
         
-        # 如果数据库中没有，尝试从平台API获取
         adapter = self.get_adapter(platform)
         if adapter and adapter.is_enabled:
             try:
                 account_info = await adapter.get_account_info(account_id)
-                if account_info:
-                    # 标准化数据格式
-                    normalized_data = adapter.normalize_account_data(account_info)
-                    return AccountResponse(**normalized_data)
+                return account_info
             except Exception as e:
-                print(f"从平台获取账号信息失败: {e}")
-        
-        return None
+                logger.error(f"从平台获取账号信息失败: {e}")
+                return None
     
     async def get_account_by_id(
         self,
-        account_id: int,
-        db: AsyncSession
+        account_id: str,
+        db: AsyncSession,
+        platform: Optional[str] = None
     ) -> Optional[AccountResponse]:
         """
         根据账号ID获取账号信息
@@ -413,20 +345,13 @@ class SearchService(SearchServiceBase):
         Args:
             account_id: 账号ID
             db: 数据库会话
+            platform: 平台类型，如wechat、weibo、twitter等，为None时不过滤平台
             
         Returns:
             Optional[AccountResponse]: 账号信息，如果不存在返回None
         """
         try:
-            stmt = select(Account).where(Account.id == account_id)
-            result = await db.execute(stmt)
-            account = result.scalar_one_or_none()
-            
-            if account:
-                return AccountResponse.model_validate(account)
-            
-            return None
-            
+            return await self.get_account_by_platform_id(platform, account_id)
         except Exception as e:
             logger.error(f"根据ID获取账号信息失败: {str(e)}", exc_info=True)
             return None
@@ -845,43 +770,68 @@ class SearchService(SearchServiceBase):
     def get_supported_platforms(self) -> List[str]:
         """获取所有支持的平台列表"""
         platforms = list(self._adapters.keys())
-        
-        # 如果没有注册平台，从数据库获取已有的平台
-        if not platforms:
-            print("没有注册的平台适配器，尝试从数据库获取平台列表...")
-            try:
-                # 使用异步方式获取数据库中的平台
-                async def get_db_platforms():
-                    from app.models.account import Account
-                    from sqlalchemy import select, distinct
-                    from app.db.database import AsyncSessionLocal
-                    
-                    async with AsyncSessionLocal() as db:
-                        query = select(distinct(Account.platform))
-                        result = await db.execute(query)
-                        db_platforms = [row[0] for row in result.fetchall()]
-                        print(f"从数据库获取到的平台列表: {db_platforms}")
-                        return db_platforms
-                
-                # 运行异步函数获取平台列表
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 如果事件循环正在运行，创建新的事件循环执行任务
-                    platforms = []
-                    print("警告: 无法在运行中的事件循环中执行数据库查询，将使用空平台列表")
-                else:
-                    platforms = loop.run_until_complete(get_db_platforms())
-            except Exception as e:
-                print(f"从数据库获取平台列表失败: {str(e)}")
-                platforms = []
-        
         return platforms
 
 
+    async def get_articles_by_platform_id(self, platform: str, account_id: str):
+        adapter = self.get_adapter(platform)
+        if adapter and adapter.is_enabled:
+            try:
+                articles = await adapter.get_all_articles_by_account_id(account_id)
+                return articles
+            except Exception as e:
+                logger.error(f"从平台获取账号信息失败: {e}")
+                return None
+
+    async def get_articles_by_account(self, db: AsyncSession, account_id: str, platform: str, page: int, page_size: int):
+
+        # 获取账号信息
+        account = await self.get_account_by_platform_id(platform, account_id)
+        if account:
+            articles = await self.get_articles_by_platform_id(platform, account_id)
+            if articles:
+                result = []  # 创建新列表存储结果
+                for article in articles:
+                    logger.info(f"""组装ArticleWithAccount返回结果： {article.title}""")
+                    article_response = ArticleWithAccount(
+                        id=article.id,
+                        account_id=article.account_id,
+                        title=article.title,
+                        url=article.url,
+                        content=article.content,
+                        summary=article.summary,
+                        publish_time=article.publish_time,
+                        publish_timestamp=article.publish_timestamp,
+                        images=article.images,
+                        details=article.details,
+                        created_at=article.created_at,
+                        updated_at=article.updated_at,
+                        image_count=article.image_count,
+                        has_images=article.has_images,
+                        thumbnail_url=article.thumbnail_url,
+                        account_name=account.name,
+                        account_platform=account.platform,
+                        account_avatar_url=account.avatar_url,
+                        platform_display_name=account.platform_display_name
+                    )
+                    result.append(article_response)  # 添加到新列表
+                logger.info(f"""组装ArticleWithAccount返回结果完成""")
+                return result  # 返回新列表
+            return articles
+        else:
+            logger.error(f"获取账号信息失败: {account_id}")
+            return None
+    
+
+    async def get_article_detail(self, article_id: str, platform: str):
+        adapter = self.get_adapter(platform)
+        if adapter and adapter.is_enabled:
+            try:
+                article = await adapter.get_article_detail(article_id)
+                return article
+            except Exception as e:
+                logger.error(f"从平台获取文章详情失败: {e}")
+                return None
+
 # 创建全局搜索服务实例
 search_service = SearchService()
-
-# 在search_service初始化完成后添加
-print("已注册的平台列表:", search_service.get_supported_platforms())
-print("可用的适配器:", [adapter.__class__.__name__ for adapter in search_service._adapters.values() if adapter.is_enabled])

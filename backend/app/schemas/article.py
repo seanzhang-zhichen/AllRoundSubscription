@@ -57,8 +57,8 @@ class ArticleUpdate(BaseModel):
 
 class ArticleResponse(ArticleBase):
     """文章响应模型"""
-    id: int = Field(description="文章ID")
-    account_id: int = Field(description="账号ID")
+    id: str = Field(description="文章ID")
+    account_id: str = Field(description="账号ID")
     publish_timestamp: int = Field(description="发布时间戳")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")

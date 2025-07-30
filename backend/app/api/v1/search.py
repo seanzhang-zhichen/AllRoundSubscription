@@ -374,7 +374,8 @@ async def get_account_by_platform_id(
 
 @router.get("/accounts/by-id/{account_id}", response_model=DataResponse[AccountResponse], summary="根据账号ID获取账号信息")
 async def get_account_by_id(
-    account_id: int = Path(..., description="账号ID"),
+    account_id: str = Path(..., description="账号ID"),
+    platform: str = Query(None, description="平台类型，如wechat、weibo、twitter等"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -382,12 +383,13 @@ async def get_account_by_id(
     根据账号ID获取账号详细信息
     
     - **account_id**: 账号ID
+    - **platform**: 平台类型，如wechat、weibo、twitter等
     
     返回账号详细信息
     """
     try:
         # 获取账号信息
-        account = await search_service.get_account_by_id(account_id, db)
+        account = await search_service.get_account_by_id(account_id, db, platform)
         
         if not account:
             raise HTTPException(
@@ -397,7 +399,7 @@ async def get_account_by_id(
         
         logger.info(
             f"用户 {current_user.id} 获取账号信息: "
-            f"账号ID={account_id}"
+            f"账号ID={account_id}, 平台={platform or '所有平台'}"
         )
         
         return DataResponse(
