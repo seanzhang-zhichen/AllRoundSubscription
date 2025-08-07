@@ -64,12 +64,14 @@ class ContentService:
                     return cached_result
             
             # 获取用户订阅的账号ID列表
-            subscribed_accounts_query = select(Subscription.account_id).where(
+            subscribed_accounts_query = select(Subscription.account_id, Subscription.platform).where(
                 Subscription.user_id == user_id
             )
             subscribed_accounts_result = await db.execute(subscribed_accounts_query)
-            subscribed_account_ids = [row[0] for row in subscribed_accounts_result.fetchall()]
-            
+            # 同时获取account_id和platform
+            subscribed_accounts = [(row[0], row[1]) for row in subscribed_accounts_result.fetchall()]
+            subscribed_account_ids = [account[0] for account in subscribed_accounts]
+
             if not subscribed_account_ids:
                 # 用户没有订阅任何账号
                 return PaginatedResponse.create(
@@ -78,56 +80,17 @@ class ContentService:
                     page=page,
                     page_size=page_size
                 )
-            
-            # 构建查询
-            offset = (page - 1) * page_size
-            
-            # 查询文章总数
-            count_query = select(func.count(Article.id)).where(
-                Article.account_id.in_(subscribed_account_ids)
-            )
-            total_result = await db.execute(count_query)
-            total = total_result.scalar() or 0
-            
-            # 查询文章列表
-            articles_query = (
-                select(Article, Account)
-                .join(Account, Article.account_id == Account.id)
-                .where(Article.account_id.in_(subscribed_account_ids))
-                .order_by(desc(Article.publish_timestamp))
-                .offset(offset)
-                .limit(page_size)
-            )
-            
-            articles_result = await db.execute(articles_query)
-            articles_data = articles_result.fetchall()
-            
-            # 转换为响应模型
+
             articles = []
-            for article, account in articles_data:
-                article_with_account = ArticleWithAccount(
-                    id=article.id,
-                    account_id=article.account_id,
-                    title=article.title,
-                    url=article.url,
-                    content=article.content,
-                    summary=article.summary,
-                    publish_time=article.publish_time,
-                    publish_timestamp=article.publish_timestamp,
-                    images=article.images or [],
-                    details=article.details or {},
-                    created_at=article.created_at,
-                    updated_at=article.updated_at,
-                    image_count=article.image_count,
-                    has_images=article.has_images,
-                    thumbnail_url=article.get_thumbnail_url(),
-                    account_name=account.name,
-                    account_platform=account.platform,
-                    account_avatar_url=account.avatar_url,
-                    platform_display_name=platform_service.get_platform_display_name(account.platform)
-                )
-                articles.append(article_with_account)
+            for account_id, platform in subscribed_accounts:
+                account_articles = await search_service.get_articles_by_account(db=db, platform=platform, account_id=account_id, page=page, page_size=page_size)                
+                articles.extend(account_articles)
             
+            # 根据文章发布时间降序排序
+
+            articles = sorted(articles, key=lambda x: x.publish_timestamp, reverse=True)
+            total = len(articles)
+
             result = PaginatedResponse.create(
                 data=articles,
                 total=total,

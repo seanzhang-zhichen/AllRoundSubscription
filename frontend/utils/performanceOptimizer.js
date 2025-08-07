@@ -166,7 +166,6 @@ class PerformanceOptimizer {
       task.status = 'completed'
       task.loadTime = loadTime
       
-      console.log(`预加载完成: ${task.type} ${task.url || task.path} (${loadTime}ms)`)
       
     } catch (error) {
       task.status = 'failed'
@@ -186,9 +185,26 @@ class PerformanceOptimizer {
         reject(new Error('图片预加载超时'))
       }, timeout)
 
+      // 检查url是否为本地资源路径
+      if (url.startsWith('/') || url.startsWith('_www') || url.startsWith('static/')) {
+        // 对于本地资源，尝试修复路径并使用不同方式预加载
+        let fixedUrl = url;
+        // 确保本地路径以'/'开头
+        if (!fixedUrl.startsWith('/')) {
+          fixedUrl = '/' + fixedUrl;
+        }
+        
+        console.log('预加载本地图片:', fixedUrl);
+        
+        // 对于本地图片，我们可以直接解析成功，无需实际调用getImageInfo
+        clearTimeout(timer);
+        resolve();
+        return;
+      }
+
       uni.getImageInfo({
         src: url,
-        success: () => {
+        success: (res) => {
           clearTimeout(timer)
           resolve()
         },
@@ -422,11 +438,29 @@ class PerformanceOptimizer {
   }
 
   /**
+   * 创建查询字符串（替代URLSearchParams）
+   * @param {Object} params - 参数对象
+   * @returns {string} 查询字符串
+   */
+  createQueryString(params) {
+    return Object.keys(params)
+      .map(key => {
+        const value = params[key];
+        return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+      })
+      .join('&');
+  }
+
+  /**
    * 优化图片加载
    * @param {string} src - 图片源
    * @param {Object} options - 优化选项
    */
   optimizeImage(src, options = {}) {
+    if (!src || typeof src !== 'string') {
+      return '';
+    }
+    
     const {
       width = this.config.image.maxWidth,
       height = this.config.image.maxHeight,
@@ -435,22 +469,31 @@ class PerformanceOptimizer {
     } = options
 
     // 如果是本地图片或已经优化过的图片，直接返回
-    if (!src || src.startsWith('/') || src.includes('optimized=true')) {
+    if (src.startsWith('/') || src.startsWith('static/') || src.includes('optimized=true')) {
       return src
     }
 
-    // 构建优化参数
-    const params = new URLSearchParams({
-      w: width,
-      h: height,
-      q: Math.floor(quality * 100),
-      f: format,
-      optimized: 'true'
-    })
+    try {
+      // 构建优化参数
+      const params = {
+        w: width,
+        h: height,
+        q: Math.floor(quality * 100),
+        f: format,
+        optimized: 'true'
+      };
 
-    // 如果原URL已有参数，合并参数
-    const separator = src.includes('?') ? '&' : '?'
-    return `${src}${separator}${params.toString()}`
+      // 构建查询字符串
+      const queryString = this.createQueryString(params);
+
+      // 如果原URL已有参数，合并参数
+      const separator = src.includes('?') ? '&' : '?';
+      const optimizedUrl = `${src}${separator}${queryString}`;
+      return optimizedUrl;
+    } catch (error) {
+      console.error('优化图片URL失败:', error);
+      return src;
+    }
   }
 
   /**

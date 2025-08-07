@@ -11,7 +11,7 @@ const API_CONFIG = {
   baseURL: (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production')
     ? 'https://your-production-api.com/api/v1' 
     : 'http://localhost:8000/api/v1', // 根据环境切换API地址
-  timeout: 10000, // 请求超时时间
+  timeout: 30000, // 请求超时时间增加到30秒
   header: {
     'Content-Type': 'application/json'
   }
@@ -160,7 +160,16 @@ class Request {
     
     // 记录请求开始时间
     const startTime = Date.now()
-    const fullUrl = config.url.startsWith('http') ? config.url : `${config.baseURL || this.config.baseURL}${config.url}`
+    
+    // 确保URL正确处理
+    // 如果url已经包含完整的http地址，直接使用；否则添加baseURL前缀
+    let fullUrl = config.url
+    if (!fullUrl.startsWith('http')) {
+      // 避免baseURL和url之间出现多余的斜杠
+      const baseURL = (config.baseURL || this.config.baseURL).replace(/\/$/, '')
+      const urlPath = fullUrl.startsWith('/') ? fullUrl : `/${fullUrl}`
+      fullUrl = `${baseURL}${urlPath}`
+    }
     
     try {
       // 执行请求拦截器
@@ -263,10 +272,22 @@ class Request {
    * GET请求
    */
   get(url, params = {}, options = {}) {
+    // 将params添加到url上作为查询参数
+    const queryString = Object.keys(params)
+      .map(key => {
+        // 处理布尔值参数，确保true/false作为字符串传递
+        if (typeof params[key] === 'boolean') {
+          return `${encodeURIComponent(key)}=${params[key] ? 'true' : 'false'}`
+        }
+        return `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`
+      })
+      .join('&')
+    
+    const fullUrl = queryString ? `${url}?${queryString}` : url
+    
     return this.request({
-      url,
+      url: fullUrl,
       method: 'GET',
-      data: params,
       ...options
     })
   }

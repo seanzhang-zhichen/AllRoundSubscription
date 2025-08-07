@@ -89,7 +89,9 @@ export const useContentStore = defineStore('content', {
             })
 
             if (cachedData && Array.isArray(cachedData.data)) {
-              console.log('使用缓存的动态流数据')
+              
+              // 检查并修复缓存的数据
+              this.validateAndFixArticleData(cachedData.data);
 
               if (refresh) {
                 this.feedList = cachedData.data || []
@@ -98,84 +100,111 @@ export const useContentStore = defineStore('content', {
               }
 
               this.pagination.total = cachedData.total || 0
-              this.pagination.hasMore = (cachedData.data || []).length === this.pagination.size
-              this.pagination.page += 1
-
-              return cachedData
+              this.pagination.hasMore = (this.feedList.length < cachedData.total)
+              this.lastUpdateTime = cachedData.timestamp || Date.now()
+              
+              // 延迟一些时间后结束加载状态，避免闪烁
+              setTimeout(() => {
+                this.loading = false
+                this.refreshing = false
+                this.loadingMore = false
+              }, 300)
+              
+              return
             }
-          } catch (cacheError) {
-            console.warn('获取缓存失败:', cacheError)
+          } catch (error) {
+            console.error('获取缓存的动态流数据失败:', error)
           }
         }
 
-        const data = await request.get('/content/feed', {
+        // 发起网络请求
+        const result = await request.get('/content/feed', {
           page: this.pagination.page,
           size: this.pagination.size
-        })
+        });
 
-        // 验证返回的数据结构
-        if (!data || !Array.isArray(data.data)) {
-          console.error('API返回数据格式错误:', data)
-          throw new Error('数据格式错误')
-        }
-
-        // 缓存数据
-        try {
-          await cache.set(cacheKey, data, {
-            type: CacheType.API_DATA,
-            priority: CachePriority.HIGH,
-            strategy: CacheStrategy.HYBRID,
-            ttl: 10 * 60 * 1000 // 10分钟
-          })
-        } catch (cacheError) {
-          console.warn('缓存动态流数据失败:', cacheError)
-        }
+        // 检查并修复获取的数据
+        this.validateAndFixArticleData(result.data);
 
         if (refresh) {
-          this.feedList = data.data || []
+          this.feedList = result.data || []
         } else {
-          this.feedList.push(...(data.data || []))
+          this.feedList.push(...(result.data || []))
         }
 
-        // 更新分页信息
-        this.pagination.total = data.total || 0
-        this.pagination.hasMore = (data.data || []).length === this.pagination.size
-        this.pagination.page += 1
-        this.lastUpdateTime = new Date()
+        this.pagination.total = result.total || 0
+        this.pagination.hasMore = (this.feedList.length < result.total)
+        this.pagination.page++
+        this.lastUpdateTime = Date.now()
 
-        return data
+        // 缓存结果
+        try {
+          await cache.set(cacheKey, {
+            data: result.data,
+            total: result.total,
+            timestamp: Date.now()
+          }, {
+            strategy: CacheStrategy.STORAGE_FIRST,
+            priority: CachePriority.HIGH,
+            ttl: 30 * 60 * 1000 // 30分钟
+          })
+        } catch (error) {
+          console.error('缓存动态流数据失败:', error)
+        }
 
       } catch (error) {
         console.error('获取动态流失败:', error)
-
-        // 网络错误时尝试使用缓存
-        if (network.networkState.isOnline === false) {
-          try {
-            const cacheKey = `feed:${this.pagination.page}:${this.pagination.size}`
-            const cachedData = await cache.get(cacheKey)
-
-            if (cachedData && Array.isArray(cachedData.data)) {
-              console.log('网络错误，使用缓存数据')
-
-              if (refresh) {
-                this.feedList = cachedData.data || []
-              } else {
-                this.feedList.push(...(cachedData.data || []))
-              }
-
-              return cachedData
-            }
-          } catch (cacheError) {
-            console.warn('获取缓存数据失败:', cacheError)
-          }
-        }
-
         throw error
       } finally {
-        this.loading = false
-        this.refreshing = false
-        this.loadingMore = false
+        setTimeout(() => {
+          this.loading = false
+          this.refreshing = false
+          this.loadingMore = false
+        }, 300)
       }
+    },
+
+    /**
+     * 验证并修复文章数据，确保所有必要字段存在
+     */
+    validateAndFixArticleData(articles) {
+      if (!Array.isArray(articles)) return;
+      
+      articles.forEach(article => {
+        if (!article) return;
+        
+        // 检查文章ID
+        if (!article.id) {
+          article.id = 'article_' + Math.random().toString(36).substring(2, 15);
+        }
+        
+        // 检查发布时间
+        if (!article.publish_time) {
+          article.publish_time = new Date().toISOString();
+        }
+        
+        // 检查文章标题
+        if (!article.title) {
+          article.title = '无标题内容';
+        }
+        
+        // 检查并修复头像
+        if (!article.account_avatar_url) {
+          article.account_avatar_url = 'static/default-avatar.png';
+        } else if (article.account_avatar_url === 'null' || article.account_avatar_url === 'undefined') {
+          article.account_avatar_url = 'static/default-avatar.png';
+        }
+        
+        // 检查账户名称
+        if (!article.account_name) {
+          article.account_name = '未知博主';
+        }
+        
+        // 检查平台信息
+        if (!article.account_platform) {
+          article.account_platform = 'default';
+        }
+      });
     },
 
     /**
@@ -198,6 +227,20 @@ export const useContentStore = defineStore('content', {
 
         const data = await request.get(`/content/articles/${articleId}`, params);
 
+        // 处理文章详情数据
+        if (data) {
+          // 确保扁平字段存在
+          if (!data.account_name) {
+            data.account_name = '未知博主';
+          }
+          if (!data.account_avatar_url) {
+            data.account_avatar_url = 'static/default-avatar.png';
+          }
+          if (!data.account_platform) {
+            data.account_platform = 'default';
+          }
+        }
+
         // 缓存文章详情
         this.articleCache.set(cacheKey, data);
 
@@ -215,7 +258,64 @@ export const useContentStore = defineStore('content', {
      * 刷新动态流
      */
     async refreshFeed() {
-      return this.fetchFeed(true)
+      try {
+        this.refreshing = true
+        this.pagination.page = 1
+        this.pagination.hasMore = true
+        
+        this.loading = true
+
+        // 确保认证令牌可用
+        const token = uni.getStorageSync('token')
+        if (!token) {
+          console.warn('获取动态流时未找到认证令牌')
+          throw new Error('用户未登录或登录已过期')
+        }
+
+        const data = await request.get('/content/feed', {
+          page: this.pagination.page,
+          size: this.pagination.size,
+          refresh: true  // 添加refresh=true参数
+        })
+
+        // 验证返回的数据结构
+        if (!data || !Array.isArray(data.data)) {
+          console.error('API返回数据格式错误:', data)
+          throw new Error('数据格式错误')
+        }
+
+        // 处理文章数据
+        const processedData = data.data.map(article => {
+          // 确保扁平字段存在
+          if (!article.account_name) {
+            article.account_name = '未知博主';
+          }
+          if (!article.account_avatar_url) {
+            article.account_avatar_url = 'static/default-avatar.png';
+          }
+          if (!article.account_platform) {
+            article.account_platform = 'default';
+          }
+          return article;
+        });
+
+        this.feedList = processedData || []
+        
+        // 更新分页信息
+        this.pagination.total = data.total || 0
+        this.pagination.hasMore = (data.data || []).length === this.pagination.size
+        this.pagination.page += 1
+        this.lastUpdateTime = new Date()
+
+        return data
+
+      } catch (error) {
+        console.error('刷新动态流失败:', error)
+        throw error
+      } finally {
+        this.loading = false
+        this.refreshing = false
+      }
     },
 
     /**

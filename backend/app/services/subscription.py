@@ -194,23 +194,16 @@ class SubscriptionService:
             订阅列表和总数
         """
         try:
-            # 记录方法开始时间
-            start_time = time.time()
             user_id = query_params.user_id
             
-            # 性能日志 - 开始
-            logger.info(f"开始获取用户订阅列表 - 用户ID: {user_id}, 页码: {query_params.page}, 每页: {query_params.page_size}")
+            logger.info(f"开始获取用户订阅列表 - 用户ID: {user_id}")
             
-            # 阶段1: 检查用户是否存在
-            step1_start = time.time()
+            # 检查用户是否存在
             user = await self._get_user_by_id(db, user_id)
             if not user:
                 raise NotFoundException("用户不存在")
-            step1_end = time.time()
-            logger.info(f"步骤1 - 检查用户是否存在: {(step1_end - step1_start):.3f}秒")
             
-            # 阶段2: 构建基础查询
-            step2_start = time.time()
+            # 构建基础查询
             base_query = (
                 select(Subscription)
                 .options(
@@ -224,19 +217,13 @@ class SubscriptionService:
             if query_params.platform:
                 # 直接使用字符串比较，因为数据库中存储的是字符串
                 base_query = base_query.where(Subscription.platform == query_params.platform)
-            step2_end = time.time()
-            logger.info(f"步骤2 - 构建基础查询: {(step2_end - step2_start):.3f}秒")
             
-            # 阶段3: 获取总数
-            step3_start = time.time()
+            # 获取总数
             count_query = select(func.count()).select_from(base_query.subquery())
             total_result = await db.execute(count_query)
             total = total_result.scalar()
-            step3_end = time.time()
-            logger.info(f"步骤3 - 获取总订阅数: {(step3_end - step3_start):.3f}秒, 总数: {total}")
             
-            # 阶段4: 排序和分页
-            step4_start = time.time()
+            # 排序和分页
             if query_params.order_by == "created_at":
                 order_field = Subscription.created_at
             elif query_params.order_by == "account_name":
@@ -259,34 +246,24 @@ class SubscriptionService:
             # 执行查询
             result = await db.execute(base_query)
             subscriptions = result.scalars().all()
-            step4_end = time.time()
-            logger.info(f"步骤4 - 排序分页和执行主查询: {(step4_end - step4_start):.3f}秒, 返回数量: {len(subscriptions)}")
             
-            # 阶段5: 转换为响应模型
-            step5_start = time.time()
+            # 转换为响应模型
             subscription_list = []
-            account_info_times = []
-            article_stats_times = []
             
             # 遍历所有订阅并获取额外信息
-            for i, subscription in enumerate(subscriptions):
+            for subscription in enumerate(subscriptions):
+                # 获取实际的订阅对象（enumerate返回的是元组）
+                _, subscription = subscription
+                
                 # 获取账号信息
-                account_start = time.time()
                 account_id = subscription.account_id
                 platform = subscription.platform
                 account = await search_service.get_account_by_platform_id(platform, account_id)
-                account_end = time.time()
-                account_time = account_end - account_start
-                account_info_times.append(account_time)
                 
                 # 获取最新文章时间和文章数量
-                article_start = time.time()
                 latest_article_time, article_count = await self._get_account_article_stats(
                     db, platform, account_id
                 )
-                article_end = time.time()
-                article_time = article_end - article_start
-                article_stats_times.append(article_time)
                 
                 # 构建响应模型
                 subscription_with_account = SubscriptionWithAccount(
@@ -305,26 +282,8 @@ class SubscriptionService:
                     article_count=article_count
                 )
                 subscription_list.append(subscription_with_account)
-                
-                # 每5个订阅记录一次进度和耗时
-                if (i + 1) % 5 == 0 or i == len(subscriptions) - 1:
-                    logger.info(f"已处理 {i+1}/{len(subscriptions)} 个订阅")
             
-            # 计算平均时间
-            avg_account_time = sum(account_info_times) / len(account_info_times) if account_info_times else 0
-            avg_article_time = sum(article_stats_times) / len(article_stats_times) if article_stats_times else 0
-            max_account_time = max(account_info_times) if account_info_times else 0
-            max_article_time = max(article_stats_times) if article_stats_times else 0
-            
-            step5_end = time.time()
-            logger.info(f"步骤5 - 处理账号信息和文章统计: {(step5_end - step5_start):.3f}秒")
-            logger.info(f"账号信息获取: 平均 {avg_account_time:.3f}秒/个, 最大 {max_account_time:.3f}秒")
-            logger.info(f"文章统计获取: 平均 {avg_article_time:.3f}秒/个, 最大 {max_article_time:.3f}秒")
-            
-            # 计算总耗时
-            end_time = time.time()
-            total_time = end_time - start_time
-            logger.info(f"获取用户订阅列表总耗时: {total_time:.3f}秒 - 用户ID: {user_id}, 返回: {len(subscription_list)}/{total}")
+            logger.info(f"获取用户订阅列表完成 - 用户ID: {user_id}, 返回: {len(subscription_list)}/{total}")
             
             return subscription_list, total
             

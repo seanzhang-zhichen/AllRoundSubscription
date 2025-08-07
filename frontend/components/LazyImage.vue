@@ -1,5 +1,10 @@
 <template>
   <view class="lazy-image-container" :style="containerStyle">
+    <!-- 调试信息 -->
+    <view v-if="debug" class="debug-info">
+      <text class="debug-text">加载:{{loading?'是':'否'}} 成功:{{loaded?'是':'否'}} 错误:{{error?'是':'否'}}</text>
+    </view>
+    
     <!-- 占位符 -->
     <view 
       v-if="!loaded && !error" 
@@ -19,12 +24,11 @@
       </view>
     </view>
     
-    <!-- 实际图片 -->
+    <!-- 实际图片 - 改为直接显示不使用v-if -->
     <image
-      v-if="shouldLoad"
       :src="optimizedSrc"
       :mode="mode"
-      :lazy-load="true"
+      :lazy-load="false"
       :fade-in="true"
       :webp="true"
       class="lazy-image"
@@ -45,6 +49,7 @@
       <view class="error-content">
         <text class="error-icon">❌</text>
         <text class="error-text">图片加载失败</text>
+        <text class="error-detail">{{errorDetail}}</text>
         <text class="retry-text">点击重试</text>
       </view>
     </view>
@@ -127,6 +132,11 @@ export default {
     clickable: {
       type: Boolean,
       default: false
+    },
+    // 是否显示调试信息
+    debug: {
+      type: Boolean,
+      default: false
     }
   },
   emits: ['load', 'error', 'click'],
@@ -135,9 +145,10 @@ export default {
     const loaded = ref(false)
     const loading = ref(false)
     const error = ref(false)
-    const shouldLoad = ref(false)
+    const shouldLoad = ref(true) // 改为默认立即加载
     const progress = ref(0)
     const retryCount = ref(0)
+    const errorDetail = ref('')
     
     // 交叉观察器
     const observer = ref(null)
@@ -148,12 +159,21 @@ export default {
     const network = useNetwork()
 
     // 计算属性
-    const containerStyle = computed(() => ({
-      width: typeof props.width === 'number' ? `${props.width}rpx` : props.width,
-      height: typeof props.height === 'number' ? `${props.height}rpx` : props.height,
-      position: 'relative',
-      overflow: 'hidden'
-    }))
+    const containerStyle = computed(() => {
+      // 将数值型宽高转换为rpx单位
+      const width = typeof props.width === 'number' ? `${props.width}rpx` : props.width;
+      const height = typeof props.height === 'number' ? `${props.height}rpx` : props.height;
+      
+      return {
+        width: width,
+        height: height,
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      };
+    });
 
     const placeholderStyle = computed(() => ({
       width: '100%',
@@ -168,29 +188,56 @@ export default {
       zIndex: 1
     }))
 
-    const imageStyle = computed(() => ({
-      width: '100%',
-      height: '100%',
-      opacity: loaded.value ? 1 : 0,
-      transition: 'opacity 0.3s ease-in-out'
-    }))
+    const imageStyle = computed(() => {
+      // 根据mode属性设置不同的样式
+      let style = {
+        width: '100%',
+        height: '100%',
+        opacity: loaded.value ? 1 : 0,
+        transition: 'opacity 0.3s ease-in-out'
+      };
+      
+      // 根据不同的mode设置不同的object-fit
+      if (props.mode === 'aspectFill') {
+        style.objectFit = 'cover';
+      } else if (props.mode === 'aspectFit') {
+        style.objectFit = 'contain';
+      } else if (props.mode === 'widthFix') {
+        style.height = 'auto';
+      } else if (props.mode === 'heightFix') {
+        style.width = 'auto';
+      }
+      
+      return style;
+    });
 
     const optimizedSrc = computed(() => {
-      if (!props.src || !props.optimize) {
-        return props.src
+      if (!props.src) {
+        return '';
+      }
+      
+      if (!props.optimize) {
+        return props.src;
+      }
+
+      // 如果是本地图片路径，直接返回原路径
+      if (typeof props.src === 'string' && (props.src.startsWith('/') || props.src.startsWith('static/'))) {
+        return props.src;
       }
 
       // 根据网络状况调整图片质量
-      const quality = network.getRecommendedImageQuality()
-      const qualityMap = { low: 0.6, medium: 0.8, high: 1.0 }
-
-      return performanceOptimizer.optimizeImage(props.src, {
+      const quality = network.getRecommendedImageQuality();
+      const qualityMap = { low: 0.6, medium: 0.8, high: 1.0 };
+      
+      const optimized = performanceOptimizer.optimizeImage(props.src, {
         width: typeof props.width === 'number' ? props.width : 750,
         height: typeof props.height === 'number' ? props.height : 750,
         quality: qualityMap[quality] || 0.8,
         ...props.optimizeOptions
-      })
-    })
+      });
+      
+      return optimized;
+    });
 
     // 缓存键
     const cacheKey = computed(() => `image:${optimizedSrc.value}`)
@@ -205,13 +252,12 @@ export default {
           bottom: props.threshold
         }).observe('.lazy-image-container', (res) => {
           if (res.intersectionRatio > 0 && !shouldLoad.value) {
-            console.log('图片进入可视区域，开始加载:', props.src)
             shouldLoad.value = true
             startLoading()
           }
         })
       } catch (error) {
-        console.error('懒加载初始化失败:', error)
+        console.error('【调试】懒加载初始化失败:', error)
         // 如果懒加载失败，直接加载图片
         shouldLoad.value = true
         startLoading()
@@ -220,19 +266,20 @@ export default {
 
     // 开始加载
     const startLoading = async () => {
-      if (loading.value || loaded.value) return
+      if (loading.value || loaded.value) {
+        return;
+      }
       
       // 首先检查缓存
       try {
         const cachedImage = await cache.get(cacheKey.value)
         if (cachedImage) {
-          console.log('使用缓存图片:', props.src)
           loaded.value = true
           emit('load', { cached: true })
           return
         }
       } catch (error) {
-        console.warn('获取图片缓存失败:', error)
+        console.warn('【调试】获取图片缓存失败:', error)
       }
       
       loading.value = true
@@ -271,10 +318,9 @@ export default {
           ttl: 24 * 60 * 60 * 1000 // 24小时
         })
       } catch (error) {
-        console.warn('缓存图片信息失败:', error)
+        console.warn('【调试】缓存图片信息失败:', error)
       }
 
-      console.log('图片加载成功:', props.src)
       emit('load', event)
     }
 
@@ -284,20 +330,19 @@ export default {
       loaded.value = false
       error.value = true
       progress.value = 0
+      errorDetail.value = event.detail || '未知错误'
 
-      console.error('图片加载失败:', props.src, event)
+      console.error('【调试】图片加载失败:', props.src, '详细信息:', JSON.stringify(event))
       emit('error', event)
     }
 
     // 重试加载
     const retry = () => {
       if (retryCount.value >= props.maxRetries) {
-        console.log('已达到最大重试次数，停止重试')
         return
       }
 
       retryCount.value++
-      console.log(`重试加载图片 (${retryCount.value}/${props.maxRetries}):`, props.src)
       
       // 重置状态
       loaded.value = false
@@ -327,13 +372,14 @@ export default {
           priority: 'low'
         })
       } catch (error) {
-        console.error('图片预加载失败:', error)
+        console.error('【调试】图片预加载失败:', error)
       }
     }
 
     // 监听src变化
     watch(() => props.src, (newSrc, oldSrc) => {
       if (newSrc !== oldSrc) {
+        
         // 重置状态
         loaded.value = false
         loading.value = false
@@ -351,7 +397,9 @@ export default {
 
     // 生命周期
     onMounted(() => {
-      initLazyLoad()
+      // 不再调用initLazyLoad而是直接开始加载
+      shouldLoad.value = true
+      startLoading()
       
       // 如果图片在可视区域内，立即开始预加载
       if (props.optimize) {
@@ -378,7 +426,8 @@ export default {
       handleLoad,
       handleError,
       handleClick,
-      retry
+      retry,
+      errorDetail
     }
   }
 }
@@ -389,6 +438,9 @@ export default {
   position: relative;
   overflow: hidden;
   border-radius: 8rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .image-placeholder {
@@ -399,6 +451,9 @@ export default {
   background-size: 20rpx 20rpx;
   background-position: 0 0, 0 10rpx, 10rpx -10rpx, -10rpx 0rpx;
   animation: placeholder-shimmer 2s infinite linear;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @keyframes placeholder-shimmer {
@@ -456,6 +511,24 @@ export default {
 .lazy-image {
   display: block;
   transition: opacity 0.3s ease-in-out;
+  object-fit: cover; /* 默认使用cover */
+}
+
+/* 不同模式的图片样式 */
+.lazy-image[mode="aspectFit"] {
+  object-fit: contain;
+}
+
+.lazy-image[mode="scaleToFill"] {
+  object-fit: fill;
+}
+
+.lazy-image[mode="widthFix"] {
+  height: auto;
+}
+
+.lazy-image[mode="heightFix"] {
+  width: auto;
 }
 
 .image-loaded {
@@ -547,5 +620,32 @@ export default {
   .loading-progress {
     background-color: rgba(255, 255, 255, 0.1);
   }
+}
+
+/* 调试信息样式 */
+.debug-info {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: rgba(255, 0, 0, 0.7);
+  color: white;
+  font-size: 16rpx;
+  padding: 2rpx 6rpx;
+  z-index: 100;
+  max-width: 100%;
+  word-break: break-all;
+  opacity: 0.8;
+}
+
+.debug-text {
+  font-size: 16rpx;
+}
+
+.error-detail {
+  font-size: 18rpx;
+  color: #f00;
+  margin-bottom: 8rpx;
+  word-break: break-all;
+  max-width: 90%;
 }
 </style>

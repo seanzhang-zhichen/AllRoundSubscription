@@ -184,6 +184,11 @@ export default {
 
     // 刷新数据
     const handleRefresh = async () => {
+      // 如果已经在刷新中，则不重复触发
+      if (refreshing.value) {
+        return;
+      }
+      
       await pageInteraction.refreshData(
         () => contentStore.refreshFeed(),
         {

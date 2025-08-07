@@ -1,6 +1,7 @@
 import os
 import requests
 import traceback
+import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
@@ -21,6 +22,7 @@ class WeChatRSSAPI:
             username: 登录用户名
             password: 登录密码
         """
+        start_time = time.perf_counter()
         self.base_url = settings.WECHAT_RSS_API_URL
         self.username = settings.WECHAT_RSS_API_USERNAME
         self.password = settings.WECHAT_RSS_API_PASSWORD
@@ -28,6 +30,8 @@ class WeChatRSSAPI:
         self.headers = {"Content-Type": "application/json"}
         self.is_login = False
         logger.info(f"初始化API客户端: {self.base_url}")
+        end_time = time.perf_counter()
+        logger.info(f"初始化API客户端耗时: {end_time - start_time:.4f}秒")
     
     def ensure_login(self) -> bool:
         """确保已登录
@@ -35,13 +39,18 @@ class WeChatRSSAPI:
         Returns:
             bool: 是否已登录成功
         """
+        start_time = time.perf_counter()
         if not self.is_login:
             logger.info("未登录，尝试登录...")
             login_result = self.login()
             if not login_result:
                 logger.error("登录失败，无法进行后续操作")
+                end_time = time.perf_counter()
+                logger.info(f"ensure_login耗时: {end_time - start_time:.4f}秒")
                 return False
             self.is_login = True
+            end_time = time.perf_counter()
+            logger.info(f"ensure_login耗时: {end_time - start_time:.4f}秒")
             return True
         else:
             # 验证当前 token 是否有效
@@ -52,8 +61,12 @@ class WeChatRSSAPI:
                 login_result = self.login()
                 if not login_result:
                     logger.error("重新登录失败，无法进行后续操作")
+                    end_time = time.perf_counter()
+                    logger.info(f"ensure_login耗时: {end_time - start_time:.4f}秒")
                     return False
                 self.is_login = True
+            end_time = time.perf_counter()
+            logger.info(f"ensure_login耗时: {end_time - start_time:.4f}秒")
             return True
     
     def verify_token(self) -> bool:
@@ -62,9 +75,12 @@ class WeChatRSSAPI:
         Returns:
             bool: token 是否有效
         """
+        start_time = time.perf_counter()
         try:
             if not self.token:
                 logger.warning("没有 token，无法验证")
+                end_time = time.perf_counter()
+                logger.info(f"verify_token耗时: {end_time - start_time:.4f}秒")
                 return False
                 
             verify_url = f"{self.base_url}/api/v1/wx/auth/verify"
@@ -76,18 +92,26 @@ class WeChatRSSAPI:
             
             if result.get("code") == 0 and "data" in result and result["data"].get("is_valid"):
                 logger.info(f"✅ token 验证成功，用户: {result['data'].get('username')}")
+                end_time = time.perf_counter()
+                logger.info(f"verify_token耗时: {end_time - start_time:.4f}秒")
                 return True
             else:
                 logger.warning("❌ token 已失效或验证失败")
+                end_time = time.perf_counter()
+                logger.info(f"verify_token耗时: {end_time - start_time:.4f}秒")
                 return False
                 
         except requests.exceptions.HTTPError as e:
             logger.error(f"token 验证请求 HTTP 错误: {e}")
             logger.error(f"响应内容: {e.response.text}")
+            end_time = time.perf_counter()
+            logger.info(f"verify_token耗时: {end_time - start_time:.4f}秒")
             return False
         except Exception as e:
             logger.error(f"token 验证请求异常: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"verify_token耗时: {end_time - start_time:.4f}秒")
             return False
     
     def login(self) -> bool:
@@ -96,6 +120,7 @@ class WeChatRSSAPI:
         Returns:
             bool: 登录是否成功
         """
+        start_time = time.perf_counter()
         try:
             login_url = f"{self.base_url}/api/v1/wx/auth/login"
             # 使用表单数据格式提交
@@ -111,23 +136,33 @@ class WeChatRSSAPI:
                 self.token = result["access_token"]
                 self.headers["Authorization"] = f"Bearer {self.token}"
                 logger.info("登录成功，获取到令牌")
+                end_time = time.perf_counter()
+                logger.info(f"login耗时: {end_time - start_time:.4f}秒")
                 return True
             elif "data" in result and "access_token" in result["data"]:
                 self.token = result["data"]["access_token"]
                 self.headers["Authorization"] = f"Bearer {self.token}"
                 logger.info("登录成功，获取到令牌")
+                end_time = time.perf_counter()
+                logger.info(f"login耗时: {end_time - start_time:.4f}秒")
                 return True
             else:
                 logger.error(f"登录失败: {result}")
+                end_time = time.perf_counter()
+                logger.info(f"login耗时: {end_time - start_time:.4f}秒")
                 return False
                 
         except requests.exceptions.HTTPError as e:
             logger.error(f"登录请求HTTP错误: {e}")
             logger.error(f"响应内容: {e.response.text}")
+            end_time = time.perf_counter()
+            logger.info(f"login耗时: {end_time - start_time:.4f}秒")
             return False
         except Exception as e:
             logger.error(f"登录请求异常: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"login耗时: {end_time - start_time:.4f}秒")
             return False
     
     def get_article_list(self, mp_id: Optional[str] = None, offset: int = 0, limit: int = 5, 
@@ -144,9 +179,12 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 接口响应结果
         """
+        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法获取文章列表")
+            end_time = time.perf_counter()
+            logger.info(f"get_article_list耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": []
@@ -186,11 +224,15 @@ class WeChatRSSAPI:
                 result["success"] = False
                 logger.warning(f"❌ 获取文章列表失败: {status_code} - {response.text}")
                 
+            end_time = time.perf_counter()
+            logger.info(f"get_article_list耗时: {end_time - start_time:.4f}秒")
             return result
             
         except Exception as e:
             logger.error(f"获取文章列表出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_article_list耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": []
@@ -209,10 +251,13 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 包含所有文章的结果
         """
+        start_time = time.perf_counter()
         logger.info("开始获取所有文章...")
         
         if not self.ensure_login():
             logger.error("未登录，无法获取所有文章")
+            end_time = time.perf_counter()
+            logger.info(f"get_all_articles耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": [],
@@ -238,6 +283,8 @@ class WeChatRSSAPI:
                 
                 if not result["success"]:
                     logger.error(f"获取文章批次失败，中断获取（已获取 {len(all_articles)} 条）")
+                    end_time = time.perf_counter()
+                    logger.info(f"get_all_articles耗时: {end_time - start_time:.4f}秒")
                     return {
                         "success": False,
                         "data": all_articles,
@@ -265,6 +312,8 @@ class WeChatRSSAPI:
                 logger.info(f"已获取 {len(all_articles)} 条文章，继续: {has_more}")
             
             logger.info(f"✅ 成功获取所有文章，共 {len(all_articles)} 条")
+            end_time = time.perf_counter()
+            logger.info(f"get_all_articles耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": True,
                 "data": all_articles,
@@ -274,6 +323,8 @@ class WeChatRSSAPI:
         except Exception as e:
             logger.error(f"获取所有文章出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_all_articles耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": all_articles,
@@ -291,9 +342,12 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 搜索结果
         """
+        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法搜索公众号")
+            end_time = time.perf_counter()
+            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {
@@ -347,11 +401,15 @@ class WeChatRSSAPI:
                 result["success"] = False
                 logger.warning(f"❌ 搜索公众号失败: {status_code} - {response.text}")
                 
+            end_time = time.perf_counter()
+            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return result
             
         except Exception as e:
             logger.error(f"搜索公众号出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {
@@ -370,9 +428,12 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 公众号详情信息
         """
+        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法获取公众号详情")
+            end_time = time.perf_counter()
+            logger.info(f"get_account_info耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {},
@@ -407,11 +468,15 @@ class WeChatRSSAPI:
                 logger.warning(f"❌ 获取公众号详情失败: {status_code} - {response.text}")
                 result["error"] = f"请求失败 ({status_code})"
                 
+            end_time = time.perf_counter()
+            logger.info(f"get_account_info耗时: {end_time - start_time:.4f}秒")
             return result
             
         except Exception as e:
             logger.error(f"获取公众号详情出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_account_info耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {},
@@ -428,9 +493,12 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 包含所有公众号的结果
         """
+        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法获取所有公众号")
+            end_time = time.perf_counter()
+            logger.info(f"get_all_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": [],
@@ -493,6 +561,8 @@ class WeChatRSSAPI:
                     has_more = False
             
             logger.info(f"✅ 成功获取所有公众号，共 {len(all_accounts)} 个")
+            end_time = time.perf_counter()
+            logger.info(f"get_all_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": True,
                 "data": all_accounts,
@@ -502,6 +572,8 @@ class WeChatRSSAPI:
         except Exception as e:
             logger.error(f"获取所有公众号出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_all_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": all_accounts,
@@ -520,9 +592,12 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 文章详情
         """
+        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法获取文章详情")
+            end_time = time.perf_counter()
+            logger.info(f"get_article_detail耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {},
@@ -564,11 +639,15 @@ class WeChatRSSAPI:
                 logger.warning(f"❌ 获取文章详情失败: {status_code} - {response.text}")
                 result["error"] = f"请求失败 ({status_code})"
                 
+            end_time = time.perf_counter()
+            logger.info(f"get_article_detail耗时: {end_time - start_time:.4f}秒")
             return result
             
         except requests.exceptions.RequestException as e:
             logger.error(f"获取文章详情请求出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_article_detail耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {},
@@ -585,10 +664,13 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 最新文章时间和文章数量统计
         """
+        start_time = time.perf_counter()
         logger.info("开始获取所有文章...")
         
         if not self.ensure_login():
             logger.error("未登录，无法获取所有文章")
+            end_time = time.perf_counter()
+            logger.info(f"get_account_article_stats耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {}
@@ -614,6 +696,8 @@ class WeChatRSSAPI:
             
             if not result["success"]:
                 logger.error(f"获取文章批次失败，中断获取（已获取 {len(all_articles)} 条）")
+                end_time = time.perf_counter()
+                logger.info(f"get_account_article_stats耗时: {end_time - start_time:.4f}秒")
                 return {
                     "success": False,
                     "data": {}
@@ -637,6 +721,8 @@ class WeChatRSSAPI:
         except Exception as e:
             logger.error(f"获取文章出错: {e}")
             logger.error(traceback.format_exc())
+            end_time = time.perf_counter()
+            logger.info(f"get_account_article_stats耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {}
@@ -652,6 +738,8 @@ class WeChatRSSAPI:
             latest_article_time = None
             article_count = 0
 
+        end_time = time.perf_counter()
+        logger.info(f"get_account_article_stats耗时: {end_time - start_time:.4f}秒")
         return {
             "success": True,
             "data": {

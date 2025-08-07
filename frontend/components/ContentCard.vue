@@ -3,22 +3,17 @@
     <!-- 博主信息 -->
     <view class="card-header">
       <view class="author-info">
-        <LazyImage 
+        <image 
           class="author-avatar" 
-          :src="article.account?.avatar_url || '/static/default-avatar.png'" 
+          :src="authorAvatar" 
           mode="aspectFill"
-          width="80"
-          height="80"
-          :optimize="true"
-          :show-placeholder-icon="false"
-          placeholder-text=""
         />
         <view class="author-details">
-          <text class="author-name">{{ article.account?.name || '未知博主' }}</text>
+          <text class="author-name">{{ authorName }}</text>
           <view class="meta-info">
             <text class="publish-time">{{ formatTime(article.publish_time) }}</text>
-            <view class="platform-tag" :class="`platform-${article.account?.platform}`">
-              <text class="platform-text">{{ getPlatformName(article.account?.platform) }}</text>
+            <view class="platform-tag" :class="`platform-${platform}`">
+              <text class="platform-text">{{ getPlatformName(platform) }}</text>
             </view>
           </view>
         </view>
@@ -98,6 +93,56 @@ export default {
         return []
       }
       return this.article.images.slice(0, 9)
+    },
+    
+    // 获取作者头像
+    authorAvatar() {
+      // 检查account_avatar_url是否存在且不是以http开头
+      const avatarUrl = this.article.account_avatar_url;
+      
+      if (!avatarUrl) {
+        return 'static/default-avatar.png';
+      }
+      
+      // 处理http/https开头的网络图片
+      if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+        return avatarUrl;
+      }
+      
+      // 如果是"static/"开头的路径，确保前面没有斜杠
+      if (avatarUrl.startsWith('static/')) {
+        return avatarUrl;
+      }
+      
+      // 如果是以斜杠开头，去掉开头的斜杠
+      if (avatarUrl.startsWith('/static/')) {
+        const fixedPath = avatarUrl.substring(1);
+        return fixedPath;
+      }
+      
+      // 如果是绝对路径但没有http前缀，添加https
+      if (avatarUrl.includes('.com') || avatarUrl.includes('.cn') || avatarUrl.includes('.net')) {
+        const fixedUrl = avatarUrl.startsWith('//') ? 'https:' + avatarUrl : 'https://' + avatarUrl;
+        return fixedUrl;
+      }
+      
+      // 其他情况，尝试作为相对路径处理
+      if (!avatarUrl.startsWith('/')) {
+        const fixedPath = '/' + avatarUrl;
+        return fixedPath;
+      }
+      
+      return avatarUrl;
+    },
+    
+    // 获取作者名称
+    authorName() {
+      return this.article.account_name || '未知博主'
+    },
+    
+    // 获取平台
+    platform() {
+      return this.article.account_platform || 'default'
     }
   },
   methods: {
@@ -234,6 +279,13 @@ export default {
     getImageHeight(count) {
       if (count === 1) return 300 // 单图较高
       return 200 // 其他情况统一高度
+    },
+
+    /**
+     * 组件挂载后的操作
+     */
+    mounted() {
+      // 头像已直接使用image标签，不需要额外验证
     }
   }
 }
@@ -373,6 +425,8 @@ export default {
 
 .images-container {
   margin-top: 20rpx;
+  width: 100%;
+  overflow: hidden;
 }
 
 .image-grid {
@@ -380,32 +434,40 @@ export default {
   gap: 8rpx;
   border-radius: 8rpx;
   overflow: hidden;
+  width: 100%;
 }
 
 .grid-single {
   grid-template-columns: 1fr;
+  height: auto;
 }
 
 .grid-double {
   grid-template-columns: 1fr 1fr;
+  height: auto;
 }
 
 .grid-quad {
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(2, 200rpx);
+  height: calc(400rpx + 8rpx); /* 2行高度+间距 */
 }
 
 .grid-nine {
   grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: repeat(3, 200rpx);
+  height: calc(600rpx + 16rpx); /* 3行高度+间距 */
 }
 
 .content-image {
   width: 100%;
-  height: 200rpx;
+  height: 100%;
   border-radius: 8rpx;
+  object-fit: cover;
 }
 
 .grid-single .content-image {
-  height: 300rpx;
+  height: 360rpx; /* 单图更高一些 */
 }
 
 .more-images {
