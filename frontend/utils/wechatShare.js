@@ -47,7 +47,8 @@ class WechatShareManager {
 
     // 生成分享图片
     const shareImageUrl = customImageUrl || 
-      (article.images && article.images.length > 0 ? article.images[0] : this.shareConfig.defaultImageUrl)
+      (article.cover_image ? article.cover_image : 
+        (article.account?.avatar_url ? article.account.avatar_url : this.shareConfig.defaultImageUrl))
 
     return {
       title: shareTitle,

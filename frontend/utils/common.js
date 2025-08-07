@@ -3,32 +3,195 @@
  */
 
 /**
- * 格式化时间
- * @param {string|Date} time 时间
- * @param {string} format 格式 'YYYY-MM-DD HH:mm:ss'
+ * 格式化日期时间
+ * @param {Date|string} dateTime - 日期时间对象或字符串
+ * @param {string} format - 格式化模式
  * @returns {string} 格式化后的时间字符串
  */
-export function formatTime(time, format = 'YYYY-MM-DD HH:mm:ss') {
-  const date = new Date(time)
+export function formatDateTime(dateTime, format = 'yyyy-MM-dd hh:mm:ss') {
+  if (!dateTime) return '';
   
-  if (isNaN(date.getTime())) {
-    return ''
+  const date = typeof dateTime === 'string' ? new Date(dateTime) : dateTime;
+  
+  const formatOptions = {
+    'yyyy': date.getFullYear().toString(),
+    'MM': (date.getMonth() + 1).toString().padStart(2, '0'),
+    'dd': date.getDate().toString().padStart(2, '0'),
+    'hh': date.getHours().toString().padStart(2, '0'),
+    'mm': date.getMinutes().toString().padStart(2, '0'),
+    'ss': date.getSeconds().toString().padStart(2, '0')
+  };
+  
+  return format.replace(/yyyy|MM|dd|hh|mm|ss/g, match => formatOptions[match]);
+}
+
+/**
+ * 深度拷贝对象
+ * @param {Object} obj - 要拷贝的对象
+ * @returns {Object} 拷贝后的新对象
+ */
+export function deepCopy(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
   }
   
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
+  if (obj instanceof Date) {
+    return new Date(obj);
+  }
   
-  return format
-    .replace('YYYY', year)
-    .replace('MM', month)
-    .replace('DD', day)
-    .replace('HH', hours)
-    .replace('mm', minutes)
-    .replace('ss', seconds)
+  if (obj instanceof Array) {
+    return obj.map(item => deepCopy(item));
+  }
+  
+  if (obj instanceof Object) {
+    const copy = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        copy[key] = deepCopy(obj[key]);
+      }
+    }
+    return copy;
+  }
+  
+  return obj;
+}
+
+/**
+ * 截取字符串，超过最大长度则显示省略号
+ * @param {string} str - 原始字符串
+ * @param {number} maxLength - 最大长度
+ * @returns {string} 处理后的字符串
+ */
+export function truncateString(str, maxLength = 50) {
+  if (!str) return '';
+  if (str.length <= maxLength) return str;
+  return str.substring(0, maxLength) + '...';
+}
+
+/**
+ * 生成指定长度的随机字符串
+ * @param {number} length - 字符串长度
+ * @returns {string} 随机字符串
+ */
+export function randomString(length = 16) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * 分享内容到社交平台
+ * @param {Object} options - 分享选项
+ * @returns {Promise<boolean>} 分享结果
+ */
+export function shareContent(options = {}) {
+  const {
+    title = '',
+    summary = '',
+    href = '',
+    imageUrl = '',
+    provider = 'weixin',
+    scene = 'WXSceneSession'
+  } = options;
+  
+  return new Promise((resolve, reject) => {
+    // 检查环境是否支持分享
+    if (!uni.canIUse('shareWithSystem') && provider === 'system') {
+      uni.showToast({
+        title: '当前环境不支持系统分享',
+        icon: 'none'
+      });
+      reject(new Error('当前环境不支持系统分享'));
+      return;
+    }
+    
+    // 区分不同平台的分享方法
+    if (provider === 'system') {
+      // 系统分享（H5、App）
+      uni.shareWithSystem({
+        type: 0,
+        title,
+        summary,
+        href,
+        imageUrl,
+        success() {
+          resolve(true);
+        },
+        fail(err) {
+          reject(err);
+        }
+      });
+    } else {
+      // 微信分享（小程序）
+      const shareObj = {
+        provider,
+        scene,
+        type: 0,
+        title,
+        summary,
+        href,
+        imageUrl,
+        success() {
+          resolve(true);
+        },
+        fail(err) {
+          reject(err);
+        }
+      };
+      
+      // 使用平台相关分享方式
+      if (uni.getSystemInfoSync().platform === 'devtools') {
+        console.log('开发工具环境，模拟分享成功', shareObj);
+        resolve(true);
+      } else {
+        // #ifdef APP-PLUS
+        uni.share(shareObj);
+        // #endif
+        
+        // #ifdef H5 || MP-WEIXIN
+        console.log('H5或小程序环境，通过自定义组件实现分享', shareObj);
+        resolve(true);
+        // #endif
+      }
+    }
+  });
+}
+
+/**
+ * 防抖函数
+ * @param {Function} fn - 需要防抖的函数
+ * @param {number} delay - 延迟时间（毫秒）
+ * @returns {Function} 经过防抖处理的函数
+ */
+export function debounce(fn, delay = 300) {
+  let timer = null;
+  return function(...args) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+      timer = null;
+    }, delay);
+  };
+}
+
+/**
+ * 节流函数
+ * @param {Function} fn - 需要节流的函数
+ * @param {number} interval - 间隔时间（毫秒）
+ * @returns {Function} 经过节流处理的函数
+ */
+export function throttle(fn, interval = 300) {
+  let last = 0;
+  return function(...args) {
+    const now = Date.now();
+    if (now - last >= interval) {
+      fn.apply(this, args);
+      last = now;
+    }
+  };
 }
 
 /**
@@ -67,82 +230,6 @@ export function formatRelativeTime(time) {
   } else {
     return `${Math.floor(diff / year)}年前`
   }
-}
-
-/**
- * 防抖函数
- * @param {Function} func 要防抖的函数
- * @param {number} delay 延迟时间
- * @returns {Function} 防抖后的函数
- */
-export function debounce(func, delay = 300) {
-  let timeoutId
-  return function (...args) {
-    clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => func.apply(this, args), delay)
-  }
-}
-
-/**
- * 节流函数
- * @param {Function} func 要节流的函数
- * @param {number} delay 延迟时间
- * @returns {Function} 节流后的函数
- */
-export function throttle(func, delay = 300) {
-  let lastTime = 0
-  return function (...args) {
-    const now = Date.now()
-    if (now - lastTime >= delay) {
-      lastTime = now
-      func.apply(this, args)
-    }
-  }
-}
-
-/**
- * 深拷贝
- * @param {any} obj 要拷贝的对象
- * @returns {any} 拷贝后的对象
- */
-export function deepClone(obj) {
-  if (obj === null || typeof obj !== 'object') {
-    return obj
-  }
-  
-  if (obj instanceof Date) {
-    return new Date(obj.getTime())
-  }
-  
-  if (obj instanceof Array) {
-    return obj.map(item => deepClone(item))
-  }
-  
-  if (typeof obj === 'object') {
-    const cloned = {}
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        cloned[key] = deepClone(obj[key])
-      }
-    }
-    return cloned
-  }
-  
-  return obj
-}
-
-/**
- * 生成随机字符串
- * @param {number} length 长度
- * @returns {string} 随机字符串
- */
-export function generateRandomString(length = 8) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let result = ''
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return result
 }
 
 /**

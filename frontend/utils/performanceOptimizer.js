@@ -166,6 +166,11 @@ class PerformanceOptimizer {
       task.status = 'completed'
       task.loadTime = loadTime
       
+      // 记录预加载性能数据
+      this.logPreloadPerformance(task, loadTime)
+      
+      // 如果加载时间过长，考虑调整预加载优先级策略
+      this.adjustPreloadStrategy(task, loadTime)
       
     } catch (error) {
       task.status = 'failed'
@@ -599,6 +604,71 @@ class PerformanceOptimizer {
         icon: 'none',
         duration: 2000
       })
+    }
+  }
+
+  /**
+   * 记录预加载性能数据
+   * @param {Object} task - 预加载任务
+   * @param {number} loadTime - 加载时间
+   */
+  logPreloadPerformance(task, loadTime) {
+    try {
+      // 根据加载时间对性能进行评估
+      let performanceLevel = 'good';
+      if (loadTime > 1000) {
+        performanceLevel = 'slow';
+      } else if (loadTime > 500) {
+        performanceLevel = 'medium';
+      }
+
+      console.log(`预加载性能 [${performanceLevel}]: ${task.type} ${task.url || task.path || ''} - ${loadTime}ms`);
+      
+      // 如果是API预加载，记录缓存命中情况
+      if (task.type === 'api' && task.url) {
+        const cacheKey = this.generateCacheKey(task.url, task.params || {});
+        const wasCached = this.cache.has(cacheKey);
+        console.log(`API缓存状态: ${wasCached ? '命中' : '未命中'} - ${task.url}`);
+      }
+    } catch (error) {
+      console.error('记录预加载性能数据失败:', error);
+    }
+  }
+  
+  /**
+   * 根据加载时间调整预加载策略
+   * @param {Object} task - 预加载任务
+   * @param {number} loadTime - 加载时间
+   */
+  adjustPreloadStrategy(task, loadTime) {
+    try {
+      // 如果加载时间过长，调整策略
+      if (loadTime > 2000) {
+        // 对于图片，可以考虑使用更低质量的预加载
+        if (task.type === 'image') {
+          console.log(`图片加载过慢，建议优化: ${task.url}`);
+        }
+        
+        // 对于API，可以考虑增加缓存时间
+        if (task.type === 'api' && task.url) {
+          const cacheKey = this.generateCacheKey(task.url, task.params || {});
+          if (this.cache.has(cacheKey)) {
+            const cacheItem = this.cache.get(cacheKey);
+            // 增加缓存生存时间
+            cacheItem.maxAge = Math.min(cacheItem.maxAge * 1.5, 24 * 60 * 60 * 1000); // 最多24小时
+            this.cache.set(cacheKey, cacheItem);
+            console.log(`增加API缓存时间: ${task.url}`);
+          }
+        }
+        
+        // 对于页面，减少并发预加载数
+        if (task.type === 'page' && this.config.preload.maxConcurrent > 1) {
+          this.config.preload.maxConcurrent = Math.max(1, this.config.preload.maxConcurrent - 1);
+          console.log(`减少并发预加载数量至: ${this.config.preload.maxConcurrent}`);
+        }
+      }
+    } catch (error) {
+      console.error('调整预加载策略失败:', error);
     }
   }
 

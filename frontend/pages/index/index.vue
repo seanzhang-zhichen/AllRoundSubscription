@@ -19,16 +19,6 @@
     
     <!-- 主内容区域 -->
     <view v-else class="content">
-      <!-- 页面头部 -->
-      <view class="header">
-        <text class="title">动态内容</text>
-        <view class="header-actions">
-          <view class="refresh-btn" @click="handleRefresh" :class="{ 'refreshing': refreshing }">
-            <text class="refresh-icon">↻</text>
-          </view>
-        </view>
-      </view>
-
       <!-- 内容列表 -->
       <scroll-view 
         class="content-scroll"
@@ -207,11 +197,25 @@ export default {
     // 导航到文章详情
     const navigateToArticle = (article) => {
       checkLoginAndNavigate(() => {
+        // 检查文章是否具有平台信息
+        if (!article.account?.platform && !article.account_platform) {
+          uni.showToast({
+            title: '无法获取平台信息',
+            icon: 'none',
+            duration: 2000
+          });
+          console.error('缺少平台信息，无法跳转文章详情', article);
+          return;
+        }
+        
+        // 获取平台信息，优先使用嵌套格式，其次使用扁平格式
+        const platform = article.account?.platform || article.account_platform;
+        
         // 标记文章为已读
         contentStore.markArticleAsRead(article.id);
         
         // 跳转到文章详情页
-        navigateToArticleDetail(article.id, article.account?.platform);
+        navigateToArticleDetail(article.id, platform);
       });
     };
 
@@ -370,56 +374,8 @@ export default {
 }
 
 .content {
-  padding: 20rpx;
+  padding: 0;
   padding-bottom: 100rpx; /* 为回到顶部按钮留出空间 */
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30rpx;
-  padding: 20rpx 0;
-  background-color: white;
-  border-radius: 12rpx;
-  padding: 30rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
-}
-
-.title {
-  font-size: 36rpx;
-  font-weight: bold;
-  color: #333;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-}
-
-.refresh-btn {
-  width: 60rpx;
-  height: 60rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 30rpx;
-  background-color: #f5f5f5;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.refresh-btn:active {
-  background-color: #e0e0e0;
-}
-
-.refresh-btn.refreshing {
-  animation: rotate 1s linear infinite;
-}
-
-.refresh-icon {
-  font-size: 32rpx;
-  color: #666;
 }
 
 @keyframes rotate {
@@ -432,10 +388,11 @@ export default {
 }
 
 .content-scroll {
-  height: calc(100vh - 200rpx);
+  height: calc(100vh - 0rpx);
 }
 
 .feed-list {
+  padding-top: 10rpx;
   padding-bottom: 40rpx;
 }
 

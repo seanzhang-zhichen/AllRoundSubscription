@@ -22,9 +22,6 @@
         <view class="action-btn" @click.stop="handleFavorite">
           <text class="action-icon" :class="{ 'favorited': article.is_favorited }">♥</text>
         </view>
-        <view class="action-btn" @click.stop="handleShare">
-          <text class="action-icon">⤴</text>
-        </view>
       </view>
     </view>
 

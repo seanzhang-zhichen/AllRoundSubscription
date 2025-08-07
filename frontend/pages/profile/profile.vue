@@ -5,7 +5,8 @@
       <view class="error-message">{{ error }}</view>
       <button v-if="canRetry" @click="retry" class="retry-btn">重试</button>
     </view>
-    <view v-else class="content">
+    <scroll-view v-else class="content" scroll-y :refresher-enabled="true" 
+      :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
       <!-- 用户信息卡片 -->
       <view class="user-info-card">
         <view class="user-header">
@@ -30,12 +31,12 @@
         <!-- 使用统计 -->
         <view class="stats-section">
           <view class="stats-item">
-            <text class="stats-number">{{ userLimits.current_subscriptions }}</text>
+            <text class="stats-number">{{ userLimits?.current_subscriptions || 0 }}</text>
             <text class="stats-label">已订阅</text>
           </view>
           <view class="stats-divider"></view>
           <view class="stats-item">
-            <text class="stats-number">{{ userLimits.today_pushes }}</text>
+            <text class="stats-number">{{ userLimits?.today_pushes || 0 }}</text>
             <text class="stats-label">今日推送</text>
           </view>
           <view class="stats-divider"></view>
@@ -86,12 +87,6 @@
           <text class="menu-text">推送设置</text>
           <text class="menu-arrow">></text>
         </view>
-        <view class="menu-item" @click="showLanguageSettings">
-          <view class="menu-icon">🌐</view>
-          <text class="menu-text">语言设置</text>
-          <text class="menu-value">{{ languageText }}</text>
-          <text class="menu-arrow">></text>
-        </view>
         <view class="menu-item" @click="showAbout">
           <view class="menu-icon">ℹ️</view>
           <text class="menu-text">关于我们</text>
@@ -103,7 +98,7 @@
       <view class="logout-section">
         <button class="logout-btn" @click="handleLogout">退出登录</button>
       </view>
-    </view>
+    </scroll-view>
 
     <!-- 编辑资料弹窗 -->
     <view class="modal" v-if="showEditModal" @click="hideEditProfile">
@@ -177,42 +172,6 @@
         </view>
       </view>
     </view>
-
-    <!-- 语言设置弹窗 -->
-    <view class="modal" v-if="showLanguageModal" @click="hideLanguageSettings">
-      <view class="modal-content" @click.stop>
-        <view class="modal-header">
-          <text class="modal-title">语言设置</text>
-          <view class="modal-close" @click="hideLanguageSettings">×</view>
-        </view>
-        <view class="modal-body">
-          <view class="language-list">
-            <view 
-              class="language-item" 
-              :class="{ active: settingsForm.language === 'zh-CN' }"
-              @click="selectLanguage('zh-CN')"
-            >
-              <text class="language-text">简体中文</text>
-              <view class="language-check" v-if="settingsForm.language === 'zh-CN'">✓</view>
-            </view>
-            <view 
-              class="language-item" 
-              :class="{ active: settingsForm.language === 'en-US' }"
-              @click="selectLanguage('en-US')"
-            >
-              <text class="language-text">English</text>
-              <view class="language-check" v-if="settingsForm.language === 'en-US'">✓</view>
-            </view>
-          </view>
-        </view>
-        <view class="modal-footer">
-          <button class="modal-btn cancel-btn" @click="hideLanguageSettings">取消</button>
-          <button class="modal-btn confirm-btn" @click="saveLanguageSettings" :disabled="saving">
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
-        </view>
-      </view>
-    </view>
   </view>
 </template>
 
@@ -239,10 +198,21 @@ export default {
       maxRetryCount: 3
     })
 
+    // 确保userLimits有默认值
+    if (!userStore.userLimits) {
+      userStore.$patch({
+        userLimits: {
+          subscription_limit: 10,
+          current_subscriptions: 0,
+          push_limit: 10,
+          today_pushes: 0
+        }
+      })
+    }
+
     // 弹窗状态
     const showEditModal = ref(false)
     const showPushModal = ref(false)
-    const showLanguageModal = ref(false)
     const saving = ref(false)
 
     // 表单数据
@@ -265,7 +235,7 @@ export default {
 
     // 会员等级样式类
     const membershipClass = computed(() => {
-      const level = userInfo.value.membership_level
+      const level = userInfo.value?.membership_level || 'free'
       return {
         'membership-free': level === 'free',
         'membership-basic': level === 'basic',
@@ -275,7 +245,7 @@ export default {
 
     // 使用天数计算
     const daysSinceJoined = computed(() => {
-      if (!userInfo.value.created_at) return 0
+      if (!userInfo.value?.created_at) return 0
       const joinDate = new Date(userInfo.value.created_at)
       const today = new Date()
       const diffTime = Math.abs(today - joinDate)
@@ -284,34 +254,25 @@ export default {
 
     // 订阅限制文本
     const subscriptionLimitText = computed(() => {
-      const limit = userLimits.value.subscription_limit
-      const current = userLimits.value.current_subscriptions
+      const limit = userLimits.value?.subscription_limit || 10
+      const current = userLimits.value?.current_subscriptions || 0
       if (limit === -1) return '无限制'
       return `${current}/${limit}个`
     })
 
     // 推送限制文本
     const pushLimitText = computed(() => {
-      const limit = userLimits.value.push_limit
-      const current = userLimits.value.today_pushes
+      const limit = userLimits.value?.push_limit || 10
+      const current = userLimits.value?.today_pushes || 0
       if (limit === -1) return '无限制'
       return `${current}/${limit}次/天`
     })
 
     // 到期时间格式化
     const formatExpireTime = computed(() => {
-      if (!userInfo.value.membership_expire_at) return ''
+      if (!userInfo.value?.membership_expire_at) return ''
       const expireDate = new Date(userInfo.value.membership_expire_at)
       return expireDate.toLocaleDateString('zh-CN')
-    })
-
-    // 语言显示文本
-    const languageText = computed(() => {
-      const langMap = {
-        'zh-CN': '简体中文',
-        'en-US': 'English'
-      }
-      return langMap[settingsForm.value.language] || '简体中文'
     })
 
     // 初始化数据
@@ -327,17 +288,31 @@ export default {
         }
 
         // 获取用户信息和限制
-        await Promise.all([
-          userStore.fetchUserProfile(),
-          userStore.fetchUserLimits()
-        ])
+        try {
+          await userStore.fetchUserProfile()
+        } catch (e) {
+          console.error('获取用户资料失败:', e)
+        }
+        
+        try {
+          await userStore.fetchUserLimits()
+        } catch (e) {
+          console.error('获取用户限制失败:', e)
+        }
 
         // 加载用户设置
-        userStore.loadUserSettings()
+        try {
+          userStore.loadUserSettings()
+        } catch (e) {
+          console.error('加载用户设置失败:', e)
+        }
         
         // 初始化表单数据
         editForm.value.nickname = userInfo.value.nickname || ''
-        settingsForm.value = { ...userStore.userSettings }
+        settingsForm.value = { 
+          ...settingsForm.value,
+          ...(userStore.userSettings || {})
+        }
         
       } catch (error) {
         console.error('初始化数据失败:', error)
@@ -417,7 +392,10 @@ export default {
 
     // 显示推送设置弹窗
     const showPushSettings = () => {
-      settingsForm.value = { ...userStore.userSettings }
+      settingsForm.value = { 
+        ...settingsForm.value,
+        ...(userStore.userSettings || {})
+      }
       showPushModal.value = true
     }
 
@@ -466,49 +444,6 @@ export default {
       }
     }
 
-    // 显示语言设置弹窗
-    const showLanguageSettings = () => {
-      settingsForm.value = { ...userStore.userSettings }
-      showLanguageModal.value = true
-    }
-
-    // 隐藏语言设置弹窗
-    const hideLanguageSettings = () => {
-      showLanguageModal.value = false
-    }
-
-    // 选择语言
-    const selectLanguage = (language) => {
-      settingsForm.value.language = language
-    }
-
-    // 保存语言设置
-    const saveLanguageSettings = async () => {
-      try {
-        saving.value = true
-        
-        await userStore.updateUserSettings({
-          language: settingsForm.value.language
-        })
-        
-        uni.showToast({
-          title: '语言设置已保存',
-          icon: 'success'
-        })
-        
-        hideLanguageSettings()
-        
-      } catch (error) {
-        console.error('保存语言设置失败:', error)
-        uni.showToast({
-          title: '保存失败，请重试',
-          icon: 'none'
-        })
-      } finally {
-        saving.value = false
-      }
-    }
-
     // 显示关于我们
     const showAbout = () => {
       uni.showModal({
@@ -540,6 +475,25 @@ export default {
       })
     }
 
+    // 添加刷新状态和方法
+    const refreshing = ref(false)
+
+    // 下拉刷新方法
+    const onRefresh = async () => {
+      refreshing.value = true
+      try {
+        await initializeData()
+        uni.showToast({
+          title: '刷新成功',
+          icon: 'success'
+        })
+      } catch (error) {
+        console.error('刷新失败:', error)
+      } finally {
+        refreshing.value = false
+      }
+    }
+
     onMounted(() => {
       initializeData()
     })
@@ -548,6 +502,10 @@ export default {
       ...pageState.state,
       retry,
       canRetry: pageState.canRetry,
+      
+      // 添加刷新状态
+      refreshing,
+      onRefresh,
       
       // 数据
       userInfo,
@@ -559,12 +517,10 @@ export default {
       subscriptionLimitText,
       pushLimitText,
       formatExpireTime,
-      languageText,
       
       // 弹窗状态
       showEditModal,
       showPushModal,
-      showLanguageModal,
       saving,
       
       // 表单数据
@@ -582,10 +538,6 @@ export default {
       onStartTimeChange,
       onEndTimeChange,
       savePushSettings,
-      showLanguageSettings,
-      hideLanguageSettings,
-      selectLanguage,
-      saveLanguageSettings,
       showAbout,
       handleLogout
     }
@@ -1001,37 +953,5 @@ export default {
 .time-separator {
   font-size: 26rpx;
   color: #666;
-}
-
-/* 语言列表 */
-.language-list {
-  /* 样式已在 .modal-body 中定义 */
-}
-
-.language-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 30rpx 0;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.language-item:last-child {
-  border-bottom: none;
-}
-
-.language-item.active {
-  background-color: #f8f9ff;
-}
-
-.language-text {
-  font-size: 30rpx;
-  color: #333;
-}
-
-.language-check {
-  font-size: 32rpx;
-  color: #007aff;
-  font-weight: bold;
 }
 </style>

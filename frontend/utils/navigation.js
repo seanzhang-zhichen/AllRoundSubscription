@@ -59,11 +59,19 @@ export const navigateToArticleDetail = (articleId, platform) => {
     console.error('文章ID不能为空');
     return;
   }
+  
   if (!platform) {
-    console.warn('平台标识为空，建议提供');
+    console.error('平台标识不能为空');
+    uni.showToast({
+      title: '缺少平台参数',
+      icon: 'none',
+      duration: 2000
+    });
+    return;
   }
+  
   uni.navigateTo({
-    url: `/pages/article/detail?id=${articleId}&platform=${platform || ''}`
+    url: `/pages/article/detail?id=${articleId}&platform=${platform}`
   });
 };
 

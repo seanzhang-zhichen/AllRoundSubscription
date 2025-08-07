@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import request from '../utils/request'
 import { useCache, CacheType, CachePriority, CacheStrategy } from '../utils/cacheManager'
 import { useNetwork } from '../utils/networkManager'
+import { shareContent } from '../utils/common'
 
 export const useContentStore = defineStore('content', {
   state: () => ({
@@ -212,7 +213,11 @@ export const useContentStore = defineStore('content', {
      */
     async fetchArticleDetail(articleId, platform) {
       try {
-        const cacheKey = `${articleId}-${platform || 'default'}`;
+        if (!platform) {
+          throw new Error('获取文章详情必须提供平台参数');
+        }
+
+        const cacheKey = `${articleId}-${platform}`;
         // 先检查缓存
         if (this.articleCache.has(cacheKey)) {
           return this.articleCache.get(cacheKey);
@@ -220,25 +225,24 @@ export const useContentStore = defineStore('content', {
 
         this.loading = true;
 
-        const params = {};
-        if (platform) {
-            params.platform = platform;
-        }
-
+        const params = { platform };
         const data = await request.get(`/content/articles/${articleId}`, params);
 
-        // 处理文章详情数据
+        // 处理文章详情数据，确保数据一致性
         if (data) {
+          // 确保account对象存在
+          if (!data.account) {
+            data.account = {
+              name: data.account_name || '未知博主',
+              avatar_url: data.account_avatar_url || 'static/default-avatar.png',
+              platform: platform
+            };
+          }
+          
           // 确保扁平字段存在
-          if (!data.account_name) {
-            data.account_name = '未知博主';
-          }
-          if (!data.account_avatar_url) {
-            data.account_avatar_url = 'static/default-avatar.png';
-          }
-          if (!data.account_platform) {
-            data.account_platform = 'default';
-          }
+          data.account_name = data.account.name || '未知博主';
+          data.account_avatar_url = data.account.avatar_url || 'static/default-avatar.png';
+          data.account_platform = platform;
         }
 
         // 缓存文章详情
@@ -457,19 +461,14 @@ export const useContentStore = defineStore('content', {
           throw new Error('文章不存在')
         }
 
-        // 调用微信分享
-        await new Promise((resolve, reject) => {
-          uni.share({
-            provider: 'weixin',
-            scene: 'WXSceneSession',
-            type: 0,
-            href: article.url,
-            title: article.title,
-            summary: article.summary,
-            imageUrl: (article.images && article.images[0]) || '',
-            success: resolve,
-            fail: reject
-          })
+        // 使用通用的分享功能
+        await shareContent({
+          title: article.title,
+          summary: article.summary || article.description || article.title,
+          href: article.url,
+          imageUrl: (article.images && article.images[0]) || '',
+          provider: 'weixin',
+          scene: 'WXSceneSession'
         })
 
         // 记录分享统计

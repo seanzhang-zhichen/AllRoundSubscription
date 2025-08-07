@@ -29,8 +29,7 @@ export const useUserStore = defineStore('user', {
     userSettings: {
       push_enabled: true,
       push_time_start: '09:00',
-      push_time_end: '22:00',
-      language: 'zh-CN'
+      push_time_end: '22:00'
     },
     
     // 加载状态
@@ -108,7 +107,14 @@ export const useUserStore = defineStore('user', {
     async fetchUserLimits() {
       try {
         const data = await request.get('/users/limits')
-        this.userLimits = data
+        // 将后端返回的字段映射到前端期望的字段
+        this.userLimits = {
+          ...data,
+          current_subscriptions: data.subscription_used || 0,
+          today_pushes: data.daily_push_used || 0,
+          subscription_limit: data.subscription_limit || 10,
+          push_limit: data.daily_push_limit || 5
+        }
         return data
       } catch (error) {
         console.error('获取用户限制失败:', error)

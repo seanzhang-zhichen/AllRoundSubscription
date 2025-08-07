@@ -46,7 +46,7 @@
         </view>
         
         <!-- 图片展示 -->
-        <view class="images-container" v-if="article.images && article.images.length > 0">
+        <view class="images-container" v-if="article.images && article.images.length > 0 && shouldDisplayImages">
           <view class="image-grid" :class="`grid-${getGridClass(article.images.length)}`">
             <image 
               v-for="(image, index) in article.images" 
@@ -98,7 +98,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useContentStore } from '@/stores/content'
 import Loading from '@/components/Loading.vue'
@@ -155,10 +155,29 @@ export default {
       maxRetryCount: 3
     })
 
+    const loading = ref(false)
+    const error = ref(null)
     const articleId = ref('')
     const platform = ref('')
     const article = ref(null)
     const relatedArticles = ref([])
+    
+    // 判断是否显示图片 - 如果文章内容中已包含图片，则不在底部重复显示
+    const shouldDisplayImages = computed(() => {
+      if (!article.value || !article.value.content || !article.value.images) {
+        return false
+      }
+      
+      // 检查文章内容中是否已包含图片
+      const contentHasImages = article.value.content.includes('<img')
+      
+      // 如果内容中已有图片，或者只有一张图片且可能是封面图，则不显示
+      if (contentHasImages || article.value.images.length <= 1) {
+        return false
+      }
+      
+      return true
+    })
     
     // 重试逻辑
     const retry = async () => {
@@ -173,8 +192,26 @@ export default {
     const loadArticleDetail = async (id, plat) => {
       await pageState.executeAsync(async () => {
         try {
+          // 确保平台参数存在
+          if (!plat) {
+            throw new Error('缺少平台参数，无法加载文章');
+          }
+          
           // 获取文章详情
           const articleData = await contentStore.fetchArticleDetail(id, plat)
+          
+          // 处理文章图片，避免在底部重复显示封面图
+          if (articleData.images && articleData.images.length > 0) {
+            // 如果文章内容中已经包含了图片，或者只有一张图片(可能是封面图)，则移除images数组
+            const contentHasImages = articleData.content && articleData.content.includes('<img');
+            if (contentHasImages || articleData.images.length <= 1) {
+              // 保存一个cover_image属性，供分享使用
+              articleData.cover_image = articleData.images[0];
+              // 清空images数组，避免在底部显示
+              articleData.images = [];
+            }
+          }
+          
           article.value = articleData
           
           // 标记文章为已读
@@ -418,7 +455,8 @@ export default {
       getGridClass,
       formatNumber,
       formatContent,
-      canRetry: pageState.canRetry
+      canRetry: pageState.canRetry,
+      shouldDisplayImages
     }
   }
 }
