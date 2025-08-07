@@ -31,7 +31,7 @@ class WeChatRSSAPI:
     
     def ensure_login(self) -> bool:
         """确保已登录
-
+        
         Returns:
             bool: 是否已登录成功
         """
@@ -44,8 +44,51 @@ class WeChatRSSAPI:
             self.is_login = True
             return True
         else:
-            logger.debug("已登录，跳过登录")
+            # 验证当前 token 是否有效
+            logger.debug("已登录，验证 token 有效性")
+            token_valid = self.verify_token()
+            if not token_valid:
+                logger.warning("当前 token 已失效，尝试重新登录")
+                login_result = self.login()
+                if not login_result:
+                    logger.error("重新登录失败，无法进行后续操作")
+                    return False
+                self.is_login = True
             return True
+    
+    def verify_token(self) -> bool:
+        """验证当前 token 是否有效
+        
+        Returns:
+            bool: token 是否有效
+        """
+        try:
+            if not self.token:
+                logger.warning("没有 token，无法验证")
+                return False
+                
+            verify_url = f"{self.base_url}/api/v1/wx/auth/verify"
+            logger.info(f"验证 token: GET {verify_url}")
+            
+            response = requests.get(verify_url, headers=self.headers)
+            response.raise_for_status()
+            result = response.json()
+            
+            if result.get("code") == 0 and "data" in result and result["data"].get("is_valid"):
+                logger.info(f"✅ token 验证成功，用户: {result['data'].get('username')}")
+                return True
+            else:
+                logger.warning("❌ token 已失效或验证失败")
+                return False
+                
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"token 验证请求 HTTP 错误: {e}")
+            logger.error(f"响应内容: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"token 验证请求异常: {e}")
+            logger.error(traceback.format_exc())
+            return False
     
     def login(self) -> bool:
         """登录并获取认证令牌
@@ -531,3 +574,88 @@ class WeChatRSSAPI:
                 "data": {},
                 "error": str(e)
             }
+
+
+    def get_account_article_stats(self, mp_id: str) -> Dict[str, Any]:
+        """获取最新文章时间和文章数量统计
+        
+        Args:
+            mp_id: 公众号ID
+            
+        Returns:
+            Dict[str, Any]: 最新文章时间和文章数量统计
+        """
+        logger.info("开始获取所有文章...")
+        
+        if not self.ensure_login():
+            logger.error("未登录，无法获取所有文章")
+            return {
+                "success": False,
+                "data": {}
+            }
+        
+        all_articles = []
+        offset = 0
+        total_count = 0
+        batch_size = 1
+        status = 1
+        search = None
+        
+        try:
+            # 循环获取所有文章
+
+            result = self.get_article_list(
+                mp_id=mp_id,
+                offset=offset,
+                limit=batch_size,
+                status=status,
+                search=search
+            )
+            
+            if not result["success"]:
+                logger.error(f"获取文章批次失败，中断获取（已获取 {len(all_articles)} 条）")
+                return {
+                    "success": False,
+                    "data": {}
+                }
+            
+            # 解析当前批次结果
+            current_batch = result["data"]
+            batch_size_actual = len(current_batch)
+            
+            # 更新总数
+            if offset == 0 and "total" in result["data"]:
+                total_count = len(result["data"])
+                logger.info(f"文章总数: {total_count}")
+            
+            # 添加到结果列表
+            all_articles.extend(current_batch)
+
+            logger.info(f"已获取 {len(all_articles)} 条文章")
+
+
+        except Exception as e:
+            logger.error(f"获取文章出错: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                "success": False,
+                "data": {}
+            }
+
+
+        # 获取最新文章时间和文章数量统计
+        if all_articles:
+            publish_time = all_articles[0].get('publish_time')
+            latest_article_time = datetime.fromtimestamp(publish_time) if publish_time else None
+            article_count = len(all_articles)
+        else:
+            latest_article_time = None
+            article_count = 0
+
+        return {
+            "success": True,
+            "data": {
+                "latest_article_time": latest_article_time,
+                "article_count": article_count
+            }
+        }

@@ -260,9 +260,15 @@ export const useSubscriptionStore = defineStore('subscription', {
     /**
      * 订阅博主
      */
-    async subscribeAccount(accountId) {
-      console.log('开始订阅博主, accountId:', accountId)
+    async subscribeAccount(accountId, platform) {
+      console.log('开始订阅博主, accountId:', accountId, 'platform:', platform)
       try {
+        // 检查必要参数
+        if (!platform) {
+          console.error('订阅失败: 平台参数不能为空')
+          throw new Error('平台参数不能为空')
+        }
+        
         // 将账号ID添加到加载中列表
         this.loadingAccountIds.push(accountId)
         this.loading = true
@@ -278,7 +284,8 @@ export const useSubscriptionStore = defineStore('subscription', {
         console.log('发送订阅请求, 用户ID:', userStore.userInfo.id)
         const response = await request.post('/subscriptions', {
           user_id: userStore.userInfo.id,
-          account_id: accountId
+          account_id: accountId,
+          platform: platform
         })
         
         console.log('订阅成功, 响应数据:', response)
@@ -293,7 +300,8 @@ export const useSubscriptionStore = defineStore('subscription', {
             console.log('订阅响应数据格式不完整，尝试构建完整数据结构')
             subscriptionData = {
               ...subscriptionData,
-              account_id: accountId
+              account_id: accountId,
+              account_platform: platform
             }
           }
           
@@ -320,6 +328,11 @@ export const useSubscriptionStore = defineStore('subscription', {
             title: '订阅限制',
             content: '您的订阅数量已达上限，请升级会员或取消部分订阅',
             showCancel: false
+          })
+        } else if (error.message.includes('平台参数不能为空')) {
+          uni.showToast({
+            title: '订阅失败，平台参数缺失',
+            icon: 'none'
           })
         } else {
           uni.showToast({
@@ -364,8 +377,19 @@ export const useSubscriptionStore = defineStore('subscription', {
           throw new Error('无法获取账号ID')
         }
         
-        console.log('使用account_id调用取消订阅API, accountId:', accountId)
-        await request.delete(`/subscriptions/${accountId}`)
+        // 获取平台信息
+        let platform = subscription.platform || 
+                      (subscription.account && subscription.account.platform) || 
+                      'unknown'
+        
+        // 确保platform不为undefined
+        if (!platform || platform === 'undefined') {
+          console.warn('平台参数为undefined，使用默认值"unknown"')
+          platform = 'unknown'
+        }
+        
+        console.log('使用account_id调用取消订阅API, accountId:', accountId, 'platform:', platform)
+        await request.delete(`/subscriptions/${accountId}?platform=${platform}`)
         console.log('取消订阅请求成功')
         
         // 从订阅列表中移除
@@ -399,14 +423,34 @@ export const useSubscriptionStore = defineStore('subscription', {
     /**
      * 通过账号ID取消订阅
      */
-    async unsubscribeByAccountId(accountId) {
-      console.log('通过账号ID取消订阅, accountId:', accountId)
+    async unsubscribeByAccountId(accountId, platform) {
+      console.log('通过账号ID取消订阅, accountId:', accountId, 'platform:', platform)
       try {
         // 将账号ID添加到加载中列表
         this.loadingAccountIds.push(accountId)
         this.loading = true
         
-        await request.delete(`/subscriptions/${accountId}`)
+        // 检查platform是否为undefined，如果是，尝试从订阅列表中找到正确的platform
+        if (!platform || platform === 'undefined') {
+          console.warn('未提供平台参数或为undefined，尝试从订阅列表中获取')
+          const subscription = this.subscriptions.find(sub => 
+            (sub && sub.account && sub.account.id === accountId) || // 嵌套结构
+            (sub && sub.account_id === accountId) // 扁平结构
+          )
+          
+          if (subscription) {
+            platform = subscription.platform || 
+                      (subscription.account && subscription.account.platform) ||
+                      'unknown'
+            console.log('从订阅列表中获取到平台信息:', platform)
+          } else {
+            console.warn('未找到该账号的订阅信息，使用默认平台"unknown"')
+            platform = 'unknown'
+          }
+        }
+        
+        // 添加platform参数到URL查询字符串
+        await request.delete(`/subscriptions/${accountId}?platform=${platform}`)
         console.log('通过账号ID取消订阅请求成功')
         
         // 从订阅列表中移除
@@ -507,20 +551,26 @@ export const useSubscriptionStore = defineStore('subscription', {
           throw new Error('没有找到要取消的订阅')
         }
         
-        // 提取每个订阅的账号ID
-        const accountIds = subscriptionsToUnsubscribe.map(sub => 
-          sub.account_id || (sub.account && sub.account.id)
-        ).filter(id => id) // 过滤掉无效的ID
-        
-        if (accountIds.length === 0) {
-          console.error('无法提取账号ID')
-          throw new Error('无法获取账号ID')
-        }
-        
-        console.log('使用account_ids批量取消订阅:', accountIds)
-        const promises = accountIds.map(id => 
-          request.delete(`/subscriptions/${id}`)
-        )
+        console.log('使用account_ids批量取消订阅')
+        const promises = subscriptionsToUnsubscribe.map(sub => {
+          const accountId = sub.account_id || (sub.account && sub.account.id)
+          let platform = sub.platform || 
+                         (sub.account && sub.account.platform) || 
+                         'unknown'
+          
+          // 确保platform不为undefined
+          if (!platform || platform === 'undefined') {
+            console.warn(`订阅ID ${sub.id} 的平台参数为undefined，使用默认值"unknown"`)
+            platform = 'unknown'
+          }
+          
+          if (!accountId) {
+            console.warn('无法获取账号ID，跳过此订阅')
+            return Promise.resolve() // 跳过无效ID
+          }
+          console.log(`取消订阅: accountId=${accountId}, platform=${platform}`)
+          return request.delete(`/subscriptions/${accountId}?platform=${platform}`)
+        }).filter(p => p) // 过滤掉undefined的Promise
         
         await Promise.all(promises)
         console.log('批量取消订阅请求成功')
@@ -574,8 +624,8 @@ export const useSubscriptionStore = defineStore('subscription', {
     /**
      * 立即更新本地订阅状态（用于UI立即响应）
      */
-    updateLocalSubscriptionState(accountId, isSubscribed) {
-      console.log('立即更新本地订阅状态, accountId:', accountId, '状态:', isSubscribed ? '已订阅' : '未订阅')
+    updateLocalSubscriptionState(accountId, isSubscribed, platform) {
+      console.log('立即更新本地订阅状态, accountId:', accountId, '状态:', isSubscribed ? '已订阅' : '未订阅', 'platform:', platform)
       
       if (isSubscribed) {
         // 如果不存在于订阅列表中，添加一个临时订阅
@@ -584,8 +634,13 @@ export const useSubscriptionStore = defineStore('subscription', {
           this.subscriptions.unshift({
             id: `temp_${accountId}`,
             account_id: accountId,
+            account_platform: platform,
             status: 'active',
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            account: {
+              id: accountId,
+              platform: platform
+            }
           })
           console.log('已添加临时订阅对象')
         }

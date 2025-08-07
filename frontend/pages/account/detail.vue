@@ -254,20 +254,32 @@ export default {
     // 切换订阅状态
     const toggleSubscribe = async () => {
       if (!isLoggedIn.value) {
-        checkLoginAndNavigate(() => {
-          // 登录后重新执行订阅操作
-          toggleSubscribe()
+        uni.showToast({
+          title: '请先登录',
+          icon: 'none'
         })
         return
       }
 
       try {
         if (isSubscribed.value) {
-          // 取消订阅
-          await subscriptionStore.unsubscribeByAccountId(accountId.value)
+          // 取消订阅，确保传递平台参数
+          if (!accountInfo.value || !accountInfo.value.platform) {
+            console.warn('取消订阅时缺少平台信息，使用默认值')
+          }
+          const platform = accountInfo.value?.platform || 'unknown'
+          await subscriptionStore.unsubscribeByAccountId(accountId.value, platform)
         } else {
           // 创建订阅
-          await subscriptionStore.subscribeAccount(accountId.value)
+          if (!accountInfo.value || !accountInfo.value.platform) {
+            uni.showToast({
+              title: '订阅失败，缺少平台信息',
+              icon: 'none'
+            })
+            return
+          }
+          // 创建订阅，传递平台信息
+          await subscriptionStore.subscribeAccount(accountId.value, accountInfo.value.platform)
         }
       } catch (error) {
         console.error('订阅操作失败:', error)

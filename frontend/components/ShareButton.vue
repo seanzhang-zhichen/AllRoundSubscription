@@ -1,6 +1,6 @@
 <template>
   <view class="share-button-container">
-    <!-- 分享按钮 -->
+    <!-- 分享按钮 - 根据showButton属性决定是否显示 -->
     <button 
       v-if="showButton"
       @click="handleShareClick" 
@@ -93,7 +93,7 @@ export default {
     // 是否显示分享按钮
     showButton: {
       type: Boolean,
-      default: true
+      default: false
     },
     // 按钮文本
     buttonText: {
@@ -143,6 +143,11 @@ export default {
     
     // 处理分享按钮点击
     const handleShareClick = () => {
+      showShare()
+    }
+
+    // 显示分享弹窗 - 新增公开方法，可以通过ref调用
+    const showShare = () => {
       initShareData()
       sharePopup.value?.open()
     }
@@ -255,6 +260,7 @@ export default {
       shareData,
       shareDescription,
       handleShareClick,
+      showShare,
       closeSharePopup,
       shareToFriend,
       shareToTimeline,

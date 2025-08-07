@@ -121,6 +121,7 @@ def generate_fake_subscriptions(user_ids, account_ids, count=50):
     """生成假订阅数据"""
     subscriptions = []
     used_pairs = set()
+    platforms = ['weixin', 'weibo', 'zhihu', 'bilibili', 'douyin']
     
     for _ in range(count):
         # 确保用户-账号对不重复
@@ -132,10 +133,11 @@ def generate_fake_subscriptions(user_ids, account_ids, count=50):
                 used_pairs.add(pair)
                 break
         
+        platform = random.choice(platforms)
         created_at = datetime.now() - timedelta(days=random.randint(1, 60))
         updated_at = created_at + timedelta(days=random.randint(0, 5))
         
-        subscriptions.append((user_id, account_id, created_at, updated_at))
+        subscriptions.append((user_id, account_id, platform, created_at, updated_at))
     
     return subscriptions
 
@@ -181,7 +183,97 @@ def main():
     cursor = conn.cursor()
     
     try:
-        print("开始生成假数据...")
+        print("开始清空旧数据并生成新数据...")
+        
+        # 删除原来的表
+        print("删除原有表...")
+        tables = ['push_records', 'subscriptions', 'articles', 'accounts', 'users']
+        for table in tables:
+            cursor.execute(f"DROP TABLE IF EXISTS {table}")
+        
+        # 创建表
+        print("创建新的表...")
+        
+        # 用户表
+        cursor.execute('''
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            openid TEXT NOT NULL UNIQUE,
+            nickname TEXT NOT NULL,
+            avatar_url TEXT,
+            membership_level TEXT NOT NULL DEFAULT 'free',
+            membership_expire_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL
+        )
+        ''')
+        
+        # 账号表
+        cursor.execute('''
+        CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            avatar_url TEXT,
+            description TEXT,
+            follower_count INTEGER DEFAULT 0,
+            details TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            UNIQUE(platform, account_id)
+        )
+        ''')
+        
+        # 文章表
+        cursor.execute('''
+        CREATE TABLE articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL UNIQUE,
+            content TEXT,
+            summary TEXT,
+            publish_time TIMESTAMP NOT NULL,
+            publish_timestamp INTEGER NOT NULL,
+            images TEXT,
+            details TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts (id)
+        )
+        ''')
+        
+        # 订阅表
+        cursor.execute('''
+        CREATE TABLE subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (account_id) REFERENCES accounts (id),
+            UNIQUE(user_id, account_id)
+        )
+        ''')
+        
+        # 推送记录表
+        cursor.execute('''
+        CREATE TABLE push_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            article_id INTEGER NOT NULL,
+            push_time TIMESTAMP NOT NULL,
+            status TEXT NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (article_id) REFERENCES articles (id)
+        )
+        ''')
         
         # 1. 添加用户数据
         print("添加用户数据...")
@@ -229,8 +321,8 @@ def main():
         print("添加订阅数据...")
         subscriptions = generate_fake_subscriptions(user_ids, account_ids, 50)
         cursor.executemany('''
-            INSERT INTO subscriptions (user_id, account_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO subscriptions (user_id, account_id, platform, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
         ''', subscriptions)
         print(f"添加了 {len(subscriptions)} 个订阅关系")
         

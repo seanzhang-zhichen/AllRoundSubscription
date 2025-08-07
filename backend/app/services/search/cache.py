@@ -310,8 +310,7 @@ class SearchCache:
             return True
         except Exception as e:
             print(f"设置平台状态缓存失败: {e}")
-            return False
-    
+            return False    
     async def clear_search_cache(self, pattern: str = "search:*") -> int:
         """
         清除搜索相关缓存

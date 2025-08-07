@@ -4,6 +4,7 @@
 from app.core.logging import get_logger
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+import time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, desc, asc, delete
 from sqlalchemy.orm import selectinload, joinedload
@@ -27,6 +28,7 @@ from app.core.exceptions import (
 )
 import traceback
 from app.db.redis import cache_service
+from app.services.search.service import search_service
 
 logger = get_logger(__name__)
 
@@ -57,20 +59,22 @@ class SubscriptionService:
         try:
             user_id = subscription_data.user_id
             account_id = subscription_data.account_id
+            platform = subscription_data.platform
             
             # 检查用户是否存在
             user = await self._get_user_by_id(db, user_id)
             if not user:
                 raise NotFoundException("用户不存在")
             
-            # 检查账号是否存在
-            account = await self._get_account_by_id(db, account_id)
+            # 优先通过平台和账号ID查找账号
+            account = await search_service.get_account_by_platform_id(platform, account_id)
+            
             if not account:
-                raise NotFoundException("账号不存在")
+                raise NotFoundException(f"在平台 {platform} 上未找到账号 {account_id}")
             
             # 检查是否已经订阅
             existing_subscription = await self._get_subscription_by_user_account(
-                db, user_id, account_id
+                db, user_id, account.id, platform
             )
             if existing_subscription:
                 raise DuplicateException("已经订阅该账号")
@@ -83,7 +87,8 @@ class SubscriptionService:
             # 创建订阅记录
             subscription = Subscription(
                 user_id=user_id,
-                account_id=account_id
+                account_id=account.id,
+                platform=platform
             )
             
             db.add(subscription)
@@ -94,8 +99,8 @@ class SubscriptionService:
             await self._clear_user_subscription_cache(user_id)
             
             logger.info(
-                f"创建订阅成功 - 用户ID: {user_id}, 账号ID: {account_id}, "
-                f"订阅ID: {subscription.id}"
+                f"创建订阅成功 - 用户ID: {user_id}, 账号ID: {account.id}, "
+                f"平台: {platform}, 订阅ID: {subscription.id}"
             )
             
             return SubscriptionResponse.from_orm(subscription)
@@ -113,7 +118,8 @@ class SubscriptionService:
     async def delete_subscription(
         self, 
         user_id: int, 
-        account_id: int, 
+        account_id: str, 
+        platform: str,
         db: AsyncSession
     ) -> bool:
         """
@@ -122,6 +128,7 @@ class SubscriptionService:
         Args:
             user_id: 用户ID
             account_id: 账号ID
+            platform: 平台类型
             db: 数据库会话
             
         Returns:
@@ -131,10 +138,19 @@ class SubscriptionService:
             NotFoundException: 订阅关系不存在
         """
         try:
-            # 查找订阅记录
-            subscription = await self._get_subscription_by_user_account(
-                db, user_id, account_id
+            subscription_query = (
+                select(Subscription)
+                .where(
+                    and_(
+                        Subscription.user_id == user_id,
+                        Subscription.account_id == account_id,
+                        Subscription.platform == platform
+                    )
+                )
             )
+            
+            result = await db.execute(subscription_query)
+            subscription = result.scalar_one_or_none()
             if not subscription:
                 raise NotFoundException("订阅关系不存在")
             
@@ -146,8 +162,8 @@ class SubscriptionService:
             await self._clear_user_subscription_cache(user_id)
             
             logger.info(
-                f"删除订阅成功 - 用户ID: {user_id}, 账号ID: {account_id}, "
-                f"订阅ID: {subscription.id}"
+                f"删除订阅成功 - 用户ID: {user_id}, 账号ID: {subscription.account_id}, "
+                f"平台: {subscription.platform}, 订阅ID: {subscription.id}"
             )
             
             return True
@@ -178,14 +194,23 @@ class SubscriptionService:
             订阅列表和总数
         """
         try:
+            # 记录方法开始时间
+            start_time = time.time()
             user_id = query_params.user_id
             
-            # 检查用户是否存在
+            # 性能日志 - 开始
+            logger.info(f"开始获取用户订阅列表 - 用户ID: {user_id}, 页码: {query_params.page}, 每页: {query_params.page_size}")
+            
+            # 阶段1: 检查用户是否存在
+            step1_start = time.time()
             user = await self._get_user_by_id(db, user_id)
             if not user:
                 raise NotFoundException("用户不存在")
+            step1_end = time.time()
+            logger.info(f"步骤1 - 检查用户是否存在: {(step1_end - step1_start):.3f}秒")
             
-            # 构建基础查询
+            # 阶段2: 构建基础查询
+            step2_start = time.time()
             base_query = (
                 select(Subscription)
                 .options(
@@ -198,14 +223,20 @@ class SubscriptionService:
             # 平台筛选
             if query_params.platform:
                 # 直接使用字符串比较，因为数据库中存储的是字符串
-                base_query = base_query.where(Account.platform == query_params.platform)
+                base_query = base_query.where(Subscription.platform == query_params.platform)
+            step2_end = time.time()
+            logger.info(f"步骤2 - 构建基础查询: {(step2_end - step2_start):.3f}秒")
             
-            # 获取总数
+            # 阶段3: 获取总数
+            step3_start = time.time()
             count_query = select(func.count()).select_from(base_query.subquery())
             total_result = await db.execute(count_query)
             total = total_result.scalar()
+            step3_end = time.time()
+            logger.info(f"步骤3 - 获取总订阅数: {(step3_end - step3_start):.3f}秒, 总数: {total}")
             
-            # 排序
+            # 阶段4: 排序和分页
+            step4_start = time.time()
             if query_params.order_by == "created_at":
                 order_field = Subscription.created_at
             elif query_params.order_by == "account_name":
@@ -228,37 +259,72 @@ class SubscriptionService:
             # 执行查询
             result = await db.execute(base_query)
             subscriptions = result.scalars().all()
+            step4_end = time.time()
+            logger.info(f"步骤4 - 排序分页和执行主查询: {(step4_end - step4_start):.3f}秒, 返回数量: {len(subscriptions)}")
             
-            # 转换为响应格式
+            # 阶段5: 转换为响应模型
+            step5_start = time.time()
             subscription_list = []
-            for subscription in subscriptions:
-                account = subscription.account
+            account_info_times = []
+            article_stats_times = []
+            
+            # 遍历所有订阅并获取额外信息
+            for i, subscription in enumerate(subscriptions):
+                # 获取账号信息
+                account_start = time.time()
+                account_id = subscription.account_id
+                platform = subscription.platform
+                account = await search_service.get_account_by_platform_id(platform, account_id)
+                account_end = time.time()
+                account_time = account_end - account_start
+                account_info_times.append(account_time)
                 
                 # 获取最新文章时间和文章数量
+                article_start = time.time()
                 latest_article_time, article_count = await self._get_account_article_stats(
-                    db, account.id
+                    db, platform, account_id
                 )
+                article_end = time.time()
+                article_time = article_end - article_start
+                article_stats_times.append(article_time)
                 
+                # 构建响应模型
                 subscription_with_account = SubscriptionWithAccount(
                     id=subscription.id,
                     user_id=subscription.user_id,
                     account_id=subscription.account_id,
+                    platform=subscription.platform,
                     created_at=subscription.created_at,
                     account_name=account.name,
                     account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
                     account_description=account.description,
                     account_follower_count=account.follower_count,
-                    platform_display_name=self._get_platform_display_name(account.platform),
+                    platform_display_name=self._get_platform_display_name(subscription.platform),
                     latest_article_time=latest_article_time,
                     article_count=article_count
                 )
                 subscription_list.append(subscription_with_account)
+                
+                # 每5个订阅记录一次进度和耗时
+                if (i + 1) % 5 == 0 or i == len(subscriptions) - 1:
+                    logger.info(f"已处理 {i+1}/{len(subscriptions)} 个订阅")
             
-            logger.debug(
-                f"获取用户订阅列表成功 - 用户ID: {user_id}, "
-                f"返回: {len(subscription_list)}/{total}"
-            )
+            # 计算平均时间
+            avg_account_time = sum(account_info_times) / len(account_info_times) if account_info_times else 0
+            avg_article_time = sum(article_stats_times) / len(article_stats_times) if article_stats_times else 0
+            max_account_time = max(account_info_times) if account_info_times else 0
+            max_article_time = max(article_stats_times) if article_stats_times else 0
+            
+            step5_end = time.time()
+            logger.info(f"步骤5 - 处理账号信息和文章统计: {(step5_end - step5_start):.3f}秒")
+            logger.info(f"账号信息获取: 平均 {avg_account_time:.3f}秒/个, 最大 {max_account_time:.3f}秒")
+            logger.info(f"文章统计获取: 平均 {avg_article_time:.3f}秒/个, 最大 {max_article_time:.3f}秒")
+            
+            # 计算总耗时
+            end_time = time.time()
+            total_time = end_time - start_time
+            logger.info(f"获取用户订阅列表总耗时: {total_time:.3f}秒 - 用户ID: {user_id}, 返回: {len(subscription_list)}/{total}")
             
             return subscription_list, total
             
@@ -296,13 +362,11 @@ class SubscriptionService:
             # 获取订阅限制信息
             limit_info = await limits_service.check_subscription_limit(user_id, db)
             
-            # 获取平台统计
+            # 获取平台统计 - 使用订阅表中的platform字段
             platform_stats_query = (
-                select(Account.platform, func.count(Subscription.id))
-                .select_from(Subscription)
-                .join(Account, Subscription.account_id == Account.id)
+                select(Subscription.platform, func.count(Subscription.id))
                 .where(Subscription.user_id == user_id)
-                .group_by(Account.platform)
+                .group_by(Subscription.platform)
             )
             platform_result = await db.execute(platform_stats_query)
             platform_stats = {
@@ -332,13 +396,14 @@ class SubscriptionService:
                     id=subscription.id,
                     user_id=subscription.user_id,
                     account_id=subscription.account_id,
+                    platform=subscription.platform,
                     created_at=subscription.created_at,
                     account_name=account.name,
                     account_platform=account.platform,
                     account_avatar_url=account.avatar_url,
                     account_description=account.description,
                     account_follower_count=account.follower_count,
-                    platform_display_name=self._get_platform_display_name(account.platform),
+                    platform_display_name=self._get_platform_display_name(subscription.platform),
                     latest_article_time=latest_article_time,
                     article_count=article_count
                 )
@@ -382,6 +447,7 @@ class SubscriptionService:
         try:
             user_id = batch_data.user_id
             account_ids = batch_data.account_ids
+            platform = batch_data.platform
             
             # 检查用户是否存在
             user = await self._get_user_by_id(db, user_id)
@@ -396,7 +462,8 @@ class SubscriptionService:
                     # 创建单个订阅
                     subscription_data = SubscriptionCreate(
                         user_id=user_id,
-                        account_id=account_id
+                        account_id=str(account_id),
+                        platform=platform
                     )
                     await self.create_subscription(subscription_data, db)
                     success_accounts.append(account_id)
@@ -426,7 +493,7 @@ class SubscriptionService:
             )
             
             logger.info(
-                f"批量订阅完成 - 用户ID: {user_id}, "
+                f"批量订阅完成 - 用户ID: {user_id}, 平台: {platform}, "
                 f"成功: {success_count}, 失败: {failed_count}"
             )
             
@@ -444,7 +511,8 @@ class SubscriptionService:
     async def check_subscription_status(
         self, 
         user_id: int, 
-        account_id: int, 
+        account_id: str, 
+        platform: str,
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
@@ -453,16 +521,45 @@ class SubscriptionService:
         Args:
             user_id: 用户ID
             account_id: 账号ID
+            platform: 平台类型
             db: 数据库会话
             
         Returns:
             订阅状态信息
         """
         try:
-            # 检查是否已订阅
-            subscription = await self._get_subscription_by_user_account(
-                db, user_id, account_id
-            )
+            # 通过platform和account_id查找账号
+            account = await search_service.get_account_by_platform_id(platform, account_id)
+            
+            # 查找订阅记录
+            subscription = None
+            if account:
+                # 如果找到了账号，使用账号ID查找订阅
+                subscription_query = (
+                    select(Subscription)
+                    .where(
+                        and_(
+                            Subscription.user_id == user_id,
+                            Subscription.account_id == account.id,
+                            Subscription.platform == platform
+                        )
+                    )
+                )
+            else:
+                # 如果找不到账号，尝试直接通过account_id和platform查找订阅
+                subscription_query = (
+                    select(Subscription)
+                    .where(
+                        and_(
+                            Subscription.user_id == user_id,
+                            Subscription.account_id == account_id,
+                            Subscription.platform == platform
+                        )
+                    )
+                )
+            
+            result = await db.execute(subscription_query)
+            subscription = result.scalar_one_or_none()
             
             is_subscribed = subscription is not None
             subscription_id = subscription.id if subscription else None
@@ -485,6 +582,7 @@ class SubscriptionService:
             status = {
                 "user_id": user_id,
                 "account_id": account_id,
+                "platform": platform,
                 "is_subscribed": is_subscribed,
                 "subscription_id": subscription_id,
                 "subscription_time": subscription_time,
@@ -494,7 +592,7 @@ class SubscriptionService:
             
             logger.debug(
                 f"检查订阅状态完成 - 用户ID: {user_id}, 账号ID: {account_id}, "
-                f"已订阅: {is_subscribed}"
+                f"平台: {platform}, 已订阅: {is_subscribed}"
             )
             
             return status
@@ -532,54 +630,88 @@ class SubscriptionService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def _get_subscription_by_user_account(
-        self, 
-        db: AsyncSession, 
-        user_id: int, 
-        account_id: int
-    ) -> Optional[Subscription]:
-        """根据用户ID和账号ID获取订阅记录"""
+    async def _get_account_by_platform_id(self, db: AsyncSession, platform: str, account_id: str) -> Optional[Account]:
+        """根据平台和平台账号ID获取账号"""
         stmt = (
-            select(Subscription)
+            select(Account)
             .where(
                 and_(
-                    Subscription.user_id == user_id,
-                    Subscription.account_id == account_id
+                    Account.platform == platform,
+                    Account.account_id == account_id
                 )
             )
         )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
     
+    async def _get_subscription_by_user_account(
+        self, 
+        db: AsyncSession, 
+        user_id: int, 
+        account_id: int,
+        platform: str
+    ) -> Optional[Subscription]:
+        """
+        根据用户ID和账号ID获取订阅记录
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            account_id: 账号ID
+            platform: 平台类型
+            
+        Returns:
+            订阅记录，如果不存在则返回None
+        """
+        query = (
+            select(Subscription)
+            .where(
+                and_(
+                    Subscription.user_id == user_id,
+                    Subscription.account_id == account_id,
+                    Subscription.platform == platform
+                )
+            )
+        )
+        
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    
     async def _get_account_article_stats(
         self, 
         db: AsyncSession, 
-        account_id: int
+        platform: str,
+        account_id: str
     ) -> Tuple[Optional[datetime], int]:
-        """获取账号的文章统计信息"""
+        """
+        获取账号的文章统计信息（最新文章时间和文章数量）
+        
+        Args:
+            db: 数据库会话
+            platform: 平台
+            account_id: 账号ID
+            
+        Returns:
+            (最新文章时间, 文章数量)元组
+        """
+
+        
         try:
             # 获取最新文章时间
-            latest_query = (
-                select(Article.publish_time)
-                .where(Article.account_id == account_id)
-                .order_by(desc(Article.publish_time))
-                .limit(1)
-            )
-            latest_result = await db.execute(latest_query)
-            latest_time = latest_result.scalar_one_or_none()
-            
-            # 获取文章总数
-            count_query = (
-                select(func.count(Article.id))
-                .where(Article.account_id == account_id)
-            )
-            count_result = await db.execute(count_query)
-            article_count = count_result.scalar() or 0
-            
-            return latest_time, article_count
+            start_time = time.time()
+            logger.debug(f"开始获取文章统计 - 平台:{platform}, 账号ID:{account_id}")
+            stats = await search_service.get_account_article_stats(account_id, platform)
+            end_time = time.time()
+            logger.debug(f"获取文章统计完成 - 平台:{platform}, 账号ID:{account_id}, 耗时:{end_time - start_time:.3f}秒")
+            if stats:
+                latest_time = stats.get("latest_article_time")
+                article_count = stats.get("article_count")
+                return latest_time, article_count
+            else:
+                return None, 0
             
         except Exception as e:
-            logger.warning(f"获取账号文章统计失败: {str(e)}")
+            logger.error(f"获取文章统计失败 - 平台:{platform}, 账号ID:{account_id}, 错误:{str(e)}")
             return None, 0
     
     async def _clear_user_subscription_cache(self, user_id: int):

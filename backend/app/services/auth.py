@@ -200,9 +200,11 @@ class AuthService:
             logger.info(f"找到现有用户，ID: {user.id}")
             return user
         
-        # 创建新用户
+        # 创建新用户，添加默认昵称
+        nickname = f"用户_{openid[-8:]}"  # 使用openid的最后8位作为默认昵称
         user = User(
             openid=openid,
+            nickname=nickname,  # 添加默认昵称
             membership_level=MembershipLevel.FREE,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()

@@ -1,7 +1,7 @@
 """
 订阅相关数据模型
 """
-from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, ForeignKey, UniqueConstraint, String
 from sqlalchemy.orm import relationship
 from app.models.base import BaseModel
 
@@ -12,6 +12,7 @@ class Subscription(BaseModel):
     
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="用户ID")
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="账号ID")
+    platform = Column(String(50), nullable=False, index=True, comment="平台类型")
     
     # 关系定义
     user = relationship("User", back_populates="subscriptions")
@@ -23,4 +24,4 @@ class Subscription(BaseModel):
     )
     
     def __repr__(self):
-        return f"<Subscription(id={self.id}, user_id={self.user_id}, account_id={self.account_id})>"
+        return f"<Subscription(id={self.id}, user_id={self.user_id}, account_id={self.account_id}, platform={self.platform})>"

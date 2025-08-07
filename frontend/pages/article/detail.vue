@@ -42,7 +42,7 @@
         
         <!-- 文章正文 -->
         <view class="article-body" v-if="article.content">
-          <rich-text :nodes="formatContent(article.content)" class="rich-content"></rich-text>
+          <rich-text :nodes="formatContent(article.content)" class="rich-content" space="nbsp" user-select></rich-text>
         </view>
         
         <!-- 图片展示 -->
@@ -89,15 +89,7 @@
       
       <!-- 底部操作栏 -->
       <view class="article-actions">
-        <ShareButton 
-          shareType="article"
-          :article="article"
-          shareSource="article_detail"
-          buttonText="分享"
-          @share-success="onShareSuccess"
-          @share-fail="onShareFail"
-        />
-        <button @click="handleOpenOriginal" class="action-btn primary">
+        <button @click="handleOpenOriginal" class="action-btn primary full-width">
           <text class="action-text">查看原文</text>
         </button>
       </view>
@@ -110,7 +102,6 @@ import { ref, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useContentStore } from '@/stores/content'
 import Loading from '@/components/Loading.vue'
-import ShareButton from '@/components/ShareButton.vue'
 import wechatShareManager from '@/utils/wechatShare'
 import { createPageState } from '@/utils/pageState'
 import { checkLoginAndNavigate, navigateBack } from '@/utils/navigation'
@@ -118,17 +109,10 @@ import { checkLoginAndNavigate, navigateBack } from '@/utils/navigation'
 export default {
   name: 'ArticleDetailPage',
   components: {
-    Loading,
-    ShareButton
+    Loading
   },
   // 微信小程序分享到好友
   onShareAppMessage() {
-    // 如果页面实例有分享配置，使用它
-    if (this.$shareConfig) {
-      return this.$shareConfig
-    }
-    
-    // 默认分享配置
     const article = this.article
     if (article) {
       return wechatShareManager.configureArticleShare(article, {
@@ -144,12 +128,6 @@ export default {
   
   // 微信小程序分享到朋友圈
   onShareTimeline() {
-    // 如果页面实例有朋友圈分享配置，使用它
-    if (this.$timelineShareConfig) {
-      return this.$timelineShareConfig
-    }
-    
-    // 默认朋友圈分享配置
     const article = this.article
     if (article) {
       const shareData = wechatShareManager.configureArticleShare(article, {
@@ -181,7 +159,7 @@ export default {
     const platform = ref('')
     const article = ref(null)
     const relatedArticles = ref([])
-
+    
     // 重试逻辑
     const retry = async () => {
       await pageState.retry(async () => {
@@ -253,8 +231,6 @@ export default {
         }
       })
     }
-
-
 
     // 处理打开原文
     const handleOpenOriginal = () => {
@@ -345,35 +321,63 @@ export default {
     const formatContent = (content) => {
       if (!content) return ''
       
-      // 简单的HTML内容处理
-      // 将换行符转换为<br>标签
-      let formattedContent = content.replace(/\n/g, '<br>')
+      // 处理微信公众号内容
+      let formattedContent = content;
       
-      // 处理链接
+      // 1. 先处理表情图片 - 给它们添加特殊类
+      const emojiPatterns = [
+        // 匹配包含emoji或者emoticon关键词的图片
+        /<img.*?(emoji|emoticon).*?>/gi,
+        // 匹配小尺寸图片 (宽高16-28px范围)
+        /<img.*?(width|height)=(["'])(1[6-9]|2[0-8])\2.*?>/gi,
+        // 匹配行内样式中设置了小尺寸的图片
+        /<img.*?style=(["']).*?(width|height):\s*(1[6-9]|2[0-8])px.*?\1.*?>/gi
+      ];
+      
+      // 为所有表情添加类名
+      emojiPatterns.forEach(pattern => {
+        formattedContent = formattedContent.replace(pattern, (match) => {
+          // 避免重复添加类
+          if (match.includes('class="wx-emoji"') || match.includes("class='wx-emoji'")) {
+            return match;
+          }
+          
+          // 添加wx-emoji类
+          if (match.includes('class=')) {
+            return match.replace(/class=(["'])(.*?)\1/g, 'class=$1$2 wx-emoji$1');
+          } else {
+            return match.replace('<img', '<img class="wx-emoji"');
+          }
+        });
+      });
+      
+      // 2. 然后处理常规图片 - 添加响应式类
+      // 先排除已标记为表情的图片，只处理普通图片
       formattedContent = formattedContent.replace(
-        /(https?:\/\/[^\s]+)/g,
-        '<a href="$1" style="color: #007aff;">$1</a>'
-      )
+        /<img(?![^>]*class=["'][^"']*wx-emoji[^"']*["'])[^>]*>/gi,
+        match => {
+          // 添加loading属性
+          let newMatch = match.replace('<img', '<img lazy-load="true" mode="widthFix" fail-retry="3"');
+          
+          // 如果没有class属性，添加wx-image类
+          if (!newMatch.includes('class=')) {
+            return newMatch.replace('<img', '<img class="wx-image"');
+          }
+          // 如果已有class属性，追加wx-image类
+          return newMatch.replace(/class=(["'])(.*?)\1/g, 'class=$1$2 wx-image$1');
+        }
+      );
       
-      return formattedContent
-    }
-
-    // 处理分享成功
-    const onShareSuccess = (shareEvent) => {
-      console.log('分享成功:', shareEvent)
-      uni.showToast({
-        title: '分享成功',
-        icon: 'success'
-      })
-    }
-
-    // 处理分享失败
-    const onShareFail = (shareEvent) => {
-      console.error('分享失败:', shareEvent)
-      uni.showToast({
-        title: '分享失败，请重试',
-        icon: 'none'
-      })
+      // 3. 删除表情周围的多余空格
+      formattedContent = formattedContent.replace(/(&nbsp;|\s)*(<img[^>]*class=['"][^"']*wx-emoji[^"']*['"][^>]*>)(&nbsp;|\s)*/g, '$2');
+      
+      // 4. 用div包装所有常规图片，以便更好地控制显示
+      formattedContent = formattedContent.replace(
+        /<img[^>]*class=["'][^"']*wx-image[^"']*["'][^>]*>/gi, 
+        match => `<div class="image-container">${match}</div>`
+      );
+      
+      return formattedContent;
     }
 
     // 处理返回
@@ -414,8 +418,6 @@ export default {
       getGridClass,
       formatNumber,
       formatContent,
-      onShareSuccess,
-      onShareFail,
       canRetry: pageState.canRetry
     }
   }
@@ -597,6 +599,97 @@ export default {
   word-wrap: break-word;
 }
 
+/* 微信公众号富文本样式 */
+.article-body /deep/ .rich-content p {
+  margin: 1em 0;
+}
+
+.article-body /deep/ .rich-content img {
+  max-width: 100%;
+  height: auto;
+  margin: 10rpx 0;
+  box-sizing: border-box;
+  display: block;
+  object-fit: contain;
+}
+
+/* 微信表情特殊处理 - 针对wx-emoji类 */
+.article-body /deep/ .rich-content .wx-emoji,
+.article-body /deep/ .rich-content img.wx-emoji {
+  width: 20px !important;  /* 固定宽度，微信表情一般是这个大小 */
+  height: 20px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: inline !important;
+  vertical-align: text-bottom !important;
+  max-width: none !important; /* 覆盖上面的通用图片样式 */
+  font-size: 0 !important; /* 防止内部空白 */
+}
+
+/* 微信链接样式 */
+.article-body /deep/ .rich-content .wx-link {
+  color: #576b95 !important; /* 微信蓝色链接颜色 */
+  text-decoration: none !important;
+}
+
+.article-body /deep/ .rich-content h1,
+.article-body /deep/ .rich-content h2,
+.article-body /deep/ .rich-content h3,
+.article-body /deep/ .rich-content h4,
+.article-body /deep/ .rich-content h5 {
+  margin: 1.2em 0 0.8em;
+  line-height: 1.4;
+  font-weight: bold;
+}
+
+.article-body /deep/ .rich-content h1 {
+  font-size: 40rpx;
+}
+
+.article-body /deep/ .rich-content h2 {
+  font-size: 36rpx;
+}
+
+.article-body /deep/ .rich-content a {
+  color: #007aff;
+  text-decoration: none;
+}
+
+.article-body /deep/ .rich-content ul,
+.article-body /deep/ .rich-content ol {
+  margin: 1em 0;
+  padding-left: 40rpx;
+}
+
+.article-body /deep/ .rich-content li {
+  margin: 0.5em 0;
+}
+
+.article-body /deep/ .rich-content blockquote {
+  margin: 1em 0;
+  padding: 15rpx 20rpx;
+  background-color: #f8f9fa;
+  border-left: 8rpx solid #e0e0e0;
+  color: #666;
+}
+
+.article-body /deep/ .rich-content code,
+.article-body /deep/ .rich-content pre {
+  font-family: Consolas, monospace;
+  background-color: #f5f5f5;
+  border-radius: 6rpx;
+}
+
+.article-body /deep/ .rich-content pre {
+  padding: 15rpx;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.article-body /deep/ .rich-content code {
+  padding: 4rpx 8rpx;
+}
+
 /* 图片展示 */
 .images-container {
   margin: 30rpx 0;
@@ -759,6 +852,11 @@ export default {
   font-size: 28rpx;
 }
 
+/* 添加full-width样式类 */
+.full-width {
+  width: 100% !important;
+}
+
 /* 响应式调整 */
 @media screen and (max-width: 750rpx) {
   .article-content {
@@ -772,5 +870,35 @@ export default {
   .related-articles {
     padding: 20rpx;
   }
+}
+
+/* 图片容器样式 */
+.article-body /deep/ .rich-content .image-container {
+  width: 100%;
+  margin: 20rpx 0;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* 常规图片样式 - 使用更精确的选择器 */
+.article-body /deep/ .rich-content .wx-image,
+.article-body /deep/ .rich-content img.wx-image {
+  max-width: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 10rpx auto !important;
+  display: block !important;
+  object-fit: contain !important;
+  border-radius: 8rpx !important;
+}
+
+/* 超大图片特殊处理 */
+.article-body /deep/ .rich-content img[width="1080"],
+.article-body /deep/ .rich-content img[width="1280"],
+.article-body /deep/ .rich-content img[width="1920"] {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: auto !important;
+  object-fit: contain !important;
 }
 </style>

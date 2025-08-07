@@ -107,6 +107,12 @@ class PlatformAdapter(ABC):
         """
         pass
     
+    @abstractmethod
+    async def get_account_article_stats(self, account_id: str) -> Dict[str, Any]:
+        """
+        获取账号文章统计信息
+        """
+        pass
 
     def normalize_account_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """

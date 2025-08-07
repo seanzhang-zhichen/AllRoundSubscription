@@ -16,6 +16,7 @@ from app.schemas.article import ArticleWithAccount
 from app.db.database import AsyncSessionLocal
 from datetime import datetime
 import traceback
+import time
 
 logger = get_logger(__name__)
 
@@ -323,15 +324,30 @@ class SearchService(SearchServiceBase):
         Returns:
             Optional[AccountResponse]: 账号信息，如果不存在返回None
         """
+        start_time = time.time()
         
         adapter = self.get_adapter(platform)
         if adapter and adapter.is_enabled:
             try:
+                adapter_start = time.time()
                 account_info = await adapter.get_account_info(account_id)
+                adapter_time = time.time() - adapter_start
+                
+                total_time = time.time() - start_time
+                if account_info:
+                    logger.info(f"获取账号信息成功 - 平台:{platform}, 账号ID:{account_id}, 总耗时:{total_time:.3f}秒, API耗时:{adapter_time:.3f}秒")
+                else:
+                    logger.info(f"未找到账号信息 - 平台:{platform}, 账号ID:{account_id}, 耗时:{total_time:.3f}秒")
+                
                 return account_info
             except Exception as e:
-                logger.error(f"从平台获取账号信息失败: {e}")
+                total_time = time.time() - start_time
+                logger.error(f"从平台获取账号信息失败 - 平台:{platform}, 账号ID:{account_id}, 耗时:{total_time:.3f}秒, 错误:{str(e)}")
                 return None
+        else:
+            total_time = time.time() - start_time
+            logger.warning(f"平台适配器不可用 - 平台:{platform}, 账号ID:{account_id}, 耗时:{total_time:.3f}秒")
+            return None
     
     async def get_account_by_id(
         self,
@@ -831,6 +847,16 @@ class SearchService(SearchServiceBase):
                 return article
             except Exception as e:
                 logger.error(f"从平台获取文章详情失败: {e}")
+                return None
+    
+    async def get_account_article_stats(self, account_id: str, platform: str):
+        adapter = self.get_adapter(platform)
+        if adapter and adapter.is_enabled:
+            try:
+                stats = await adapter.get_account_article_stats(account_id)
+                return stats
+            except Exception as e:
+                logger.error(f"从平台获取账号文章统计信息失败: {e}")
                 return None
 
 # 创建全局搜索服务实例

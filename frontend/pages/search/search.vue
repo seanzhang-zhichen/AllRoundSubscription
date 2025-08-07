@@ -80,10 +80,10 @@
               </view>
               
               <button class="subscribe-btn" :class="{
-                subscribed: isSubscribed(account.id),
+                subscribed: isAccountSubscribed(account.id),
                 loading: subscriptionStore.isAccountLoading(account.id)
               }" @click.stop="toggleSubscribe(account)" :disabled="subscriptionStore.isAccountLoading(account.id)">
-                <text v-if="isSubscribed(account.id)" class="unsubscribe-text">退订</text>
+                <text v-if="isAccountSubscribed(account.id)" class="unsubscribe-text">退订</text>
                 <text v-else class="subscribe-text">订阅</text>
               </button>
             </view>
@@ -122,6 +122,7 @@ import Empty from '@/components/Empty.vue'
 import { createPageState } from '@/utils/pageState'
 import { checkLoginAndNavigate } from '@/utils/navigation'
 import { useSearchStore, useAppStore, useSubscriptionStore, useAuthStore } from '@/stores'
+import { onShow } from '@dcloudio/uni-app'
 
 export default {
   name: 'SearchPage',
@@ -150,6 +151,35 @@ export default {
 
     // 计算属性
     const isLoggedIn = computed(() => authStore.isLoggedIn)
+    
+    // 添加计算属性来缓存订阅状态，避免重复检查
+    const subscribedAccountIds = ref({});
+
+    // 初始化页面时只检查一次所有博主的订阅状态
+    const initSubscriptionStatus = () => {
+      if (searchStore.searchResults && searchStore.searchResults.length > 0) {
+        const ids = {};
+        searchStore.searchResults.forEach(account => {
+          if (account && account.id) {
+            ids[account.id] = subscriptionStore.isSubscribed(account.id);
+          }
+        });
+        subscribedAccountIds.value = ids;
+      }
+    };
+
+    // 高效检查账号是否已订阅，使用缓存结果
+    const isAccountSubscribed = (accountId) => {
+      return subscribedAccountIds.value[accountId] || false;
+    };
+    
+    // 更新单个账号的订阅状态缓存
+    const updateSubscriptionCache = (accountId, isSubscribed) => {
+      subscribedAccountIds.value = {
+        ...subscribedAccountIds.value,
+        [accountId]: isSubscribed
+      };
+    };
 
     // 初始化页面
     onMounted(async () => {
@@ -170,10 +200,29 @@ export default {
           // 如果没有搜索关键词且没有结果，加载所有博主
           await searchStore.searchAccounts('', [], true)
         }
+        
+        // 初始化订阅状态缓存
+        initSubscriptionStatus();
 
         console.log('搜索页面初始化完成')
       } catch (error) {
         console.error('搜索页面初始化失败:', error)
+      }
+    })
+
+    // 每次页面显示时都刷新订阅状态
+    onShow(async () => {
+      console.log('搜索页面显示')
+      try {
+        // 如果用户已登录，刷新订阅列表
+        if (isLoggedIn.value) {
+          await subscriptionStore.fetchSubscriptions(true)
+        }
+        
+        // 刷新所有博主的订阅状态
+        initSubscriptionStatus();
+      } catch (error) {
+        console.error('刷新订阅状态失败:', error)
       }
     })
 
@@ -214,6 +263,9 @@ export default {
           selectedPlatforms.value,
           true // 刷新搜索
         )
+        
+        // 搜索完成后更新订阅状态缓存
+        initSubscriptionStatus();
       }, {
         errorMessage: '搜索失败，请重试'
       })
@@ -269,12 +321,17 @@ export default {
       } else {
         await searchStore.searchAccounts('', selectedPlatforms.value, true)
       }
+      
+      // 筛选后更新订阅状态缓存
+      initSubscriptionStatus();
     }
 
     // 加载更多结果
     const loadMoreResults = async () => {
       try {
         await searchStore.loadMoreResults()
+        // 加载更多后更新订阅状态缓存
+        initSubscriptionStatus();
       } catch (error) {
         console.error('加载更多失败:', error)
         uni.showToast({
@@ -292,43 +349,46 @@ export default {
       })
     }
 
-    // 检查是否已订阅
-    const isSubscribed = (accountId) => {
-      return subscriptionStore.isSubscribed(accountId)
-    }
-
     // 切换订阅状态
     const toggleSubscribe = async (account) => {
-      if (!isLoggedIn.value) {
-        checkLoginAndNavigate(() => {
-          // 登录后重新执行订阅操作
-          toggleSubscribe(account)
-        })
-        return
-      }
-
       try {
-        const currentlySubscribed = isSubscribed(account.id)
+        // 检查用户是否已登录
+        if (!isLoggedIn.value) {
+          uni.showToast({
+            title: '请先登录',
+            icon: 'none'
+          })
+          return
+        }
+        
+        // 获取当前订阅状态，使用缓存的订阅状态
+        const currentlySubscribed = isAccountSubscribed(account.id)
         
         if (currentlySubscribed) {
-          // 先更新本地状态，使按钮立即变化
+          // 先更新本地状态缓存，使按钮立即变化
+          updateSubscriptionCache(account.id, false);
+          // 同时更新store状态，以保持一致性
           subscriptionStore.updateLocalSubscriptionState(account.id, false)
-          // 取消订阅
-          await subscriptionStore.unsubscribeByAccountId(account.id)
+          // 取消订阅，确保传递平台参数
+          await subscriptionStore.unsubscribeByAccountId(account.id, account.platform)
         } else {
-          // 先更新本地状态，使按钮立即变化
-          subscriptionStore.updateLocalSubscriptionState(account.id, true)
+          // 先更新本地状态缓存，使按钮立即变化
+          updateSubscriptionCache(account.id, true);
+          // 同时更新store状态，以保持一致性
+          subscriptionStore.updateLocalSubscriptionState(account.id, true, account.platform)
           // 创建订阅
-          await subscriptionStore.subscribeAccount(account.id)
+          await subscriptionStore.subscribeAccount(account.id, account.platform)
         }
         
         // 强制更新订阅状态视图
         await nextTick()
       } catch (error) {
         console.error('订阅操作失败:', error)
-        // 操作失败时恢复原状态
-        const currentlySubscribed = isSubscribed(account.id)
-        subscriptionStore.updateLocalSubscriptionState(account.id, !currentlySubscribed)
+        // 操作失败时恢复原状态缓存
+        const currentStatus = !isAccountSubscribed(account.id);
+        updateSubscriptionCache(account.id, currentStatus);
+        // 同时恢复store状态
+        subscriptionStore.updateLocalSubscriptionState(account.id, currentStatus, account.platform)
       }
     }
 
@@ -382,7 +442,7 @@ export default {
 
       // 计算属性
       isLoggedIn,
-
+      
       // 方法
       onSearchInput,
       handleSearch,
@@ -394,7 +454,7 @@ export default {
       togglePlatform,
       loadMoreResults,
       viewAccountDetail,
-      isSubscribed,
+      isAccountSubscribed, // 使用新的高效检查方法
       toggleSubscribe,
       clearSearch,
       getPlatformName,

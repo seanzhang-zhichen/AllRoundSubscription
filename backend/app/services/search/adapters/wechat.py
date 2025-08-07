@@ -192,6 +192,16 @@ class WeChatAdapter(PlatformAdapter):
         else:
             return None
 
+    async def get_account_article_stats(self, account_id: str) -> Dict[str, Any]:
+        """
+        获取微信公众号账号文章统计信息
+        """
+        ret = self.wechat_api.get_account_article_stats(account_id)
+        if ret["success"]:
+            return ret["data"]
+        else:
+            return None
+
 
     def normalize_account_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """

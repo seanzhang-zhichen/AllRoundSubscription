@@ -1,6 +1,7 @@
 """
 订阅管理API路由
 """
+import time
 from app.core.logging import get_logger
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
@@ -37,6 +38,7 @@ async def create_subscription(
     
     - **user_id**: 用户ID（必须与当前登录用户一致）
     - **account_id**: 要订阅的账号ID
+    - **platform**: 必填参数，账号所在平台（例如：wechat、weibo等）
     """
     try:
         # 验证用户权限
@@ -67,18 +69,20 @@ async def create_subscription(
 
 @router.delete("/{account_id}", response_model=DataResponse[bool])
 async def delete_subscription(
-    account_id: int = Path(..., description="账号ID"),
+    account_id: str = Path(..., description="账号ID"),
+    platform: str = Query(..., description="平台类型（必填）"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     取消订阅
     
-    - **account_id**: 要取消订阅的账号ID
+    - **account_id**: 账号ID
+    - **platform**: 平台类型（必填）
     """
     try:
         result = await subscription_service.delete_subscription(
-            current_user.id, account_id, db
+            current_user.id, account_id, platform, db
         )
         
         return DataResponse(
@@ -91,6 +95,7 @@ async def delete_subscription(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"取消订阅失败: {str(e)}", exc_info=True)
+        
         raise HTTPException(status_code=500, detail="取消订阅失败")
 
 
@@ -114,6 +119,10 @@ async def get_user_subscriptions(
     - **order_desc**: 是否降序排列
     """
     try:
+        # 记录API开始时间
+        start_time_api = time.time()
+        logger.info(f"开始处理获取订阅列表请求 - 用户:{current_user.id}, 页码:{page}, 每页:{page_size}")
+        
         query_params = SubscriptionList(
             user_id=current_user.id,
             platform=platform,
@@ -123,9 +132,15 @@ async def get_user_subscriptions(
             order_desc=order_desc
         )
         
+        # 调用服务层方法
         subscriptions, total = await subscription_service.get_user_subscriptions(
             query_params, db
         )
+        
+        # 记录API结束时间
+        end_time_api = time.time()
+        api_time = end_time_api - start_time_api
+        logger.info(f"订阅列表API总耗时: {api_time:.3f}秒 - 返回数据:{len(subscriptions)}/{total}条")
         
         return PaginatedResponse(
             code=200,
@@ -212,26 +227,28 @@ async def batch_create_subscriptions(
 
 @router.get("/status/{account_id}", response_model=DataResponse[Dict[str, Any]])
 async def check_subscription_status(
-    account_id: int = Path(..., description="账号ID"),
+    account_id: str = Path(..., description="账号ID"),
+    platform: str = Query(..., description="平台类型（必填）"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     检查订阅状态
     
-    - **account_id**: 要检查的账号ID
+    - **account_id**: 账号ID
+    - **platform**: 必填参数，平台类型
     
-    返回订阅状态信息，包括是否已订阅、是否可以订阅等
+    返回订阅状态信息，包括是否已订阅、订阅ID、可否订阅等
     """
     try:
-        status = await subscription_service.check_subscription_status(
-            current_user.id, account_id, db
+        result = await subscription_service.check_subscription_status(
+            current_user.id, account_id, platform, db
         )
         
         return DataResponse(
             code=200,
             message="获取订阅状态成功",
-            data=status
+            data=result
         )
         
     except Exception as e:

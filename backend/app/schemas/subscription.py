@@ -9,18 +9,19 @@ from datetime import datetime
 class SubscriptionBase(BaseModel):
     """订阅基础模型"""
     user_id: int = Field(..., description="用户ID")
-    account_id: int = Field(..., description="账号ID")
+    account_id: str = Field(..., description="账号ID")
 
 
 class SubscriptionCreate(SubscriptionBase):
     """订阅创建模型"""
-    pass
+    platform: str = Field(..., description="账号平台")
 
 
 class SubscriptionResponse(SubscriptionBase):
     """订阅响应模型"""
     id: int = Field(description="订阅ID")
     created_at: datetime = Field(description="订阅时间")
+    platform: str = Field(description="平台类型")
     
     class Config:
         from_attributes = True
@@ -67,6 +68,7 @@ class SubscriptionStats(BaseModel):
 class BatchSubscriptionCreate(BaseModel):
     """批量订阅创建模型"""
     user_id: int = Field(..., description="用户ID")
+    platform: str = Field(..., description="平台类型")
     account_ids: List[int] = Field(..., min_items=1, max_items=10, description="账号ID列表")
     
     @validator('account_ids')

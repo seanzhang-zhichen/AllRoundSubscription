@@ -6,6 +6,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import StaticPool
 from app.core.config import settings
 from app.core.logging import get_logger
+import traceback
 
 logger = get_logger(__name__)
 
@@ -65,6 +66,7 @@ async def get_db() -> AsyncSession:
         except Exception as e:
             await session.rollback()
             logger.error(f"数据库会话错误: {str(e)}")
+            traceback.print_exc()
             raise
         finally:
             await session.close()

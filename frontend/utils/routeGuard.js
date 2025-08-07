@@ -13,8 +13,9 @@ export const isUserLoggedIn = () => {
   const authStore = useAuthStore()
   const token = uni.getStorageSync('token')
   
-  // 检查store中的登录状态和本地存储的token
-  return authStore.isLoggedIn && !!token && !authStore.isTokenExpired
+  // 优先检查本地存储的token，如果存在则视为已登录
+  // 然后再检查store中的登录状态，避免因为store状态没有及时更新而导致的问题
+  return !!token || (authStore.isLoggedIn && !authStore.isTokenExpired)
 }
 
 /**
@@ -29,6 +30,16 @@ export const requireAuth = (next, options = {}) => {
     modalContent = '请先登录后再使用此功能',
     redirectAfterLogin = false
   } = options
+
+  // 确保先加载令牌信息
+  const authStore = useAuthStore()
+  const token = uni.getStorageSync('token')
+  
+  // 如果本地存储中有token，确保更新authStore的状态
+  if (token && !authStore.isLoggedIn) {
+    authStore.token = token
+    authStore.isLoggedIn = true
+  }
 
   if (isUserLoggedIn()) {
     // 已登录，继续执行
