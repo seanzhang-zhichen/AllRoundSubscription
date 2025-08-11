@@ -3,11 +3,9 @@ version: '3.8'  # Docker Compose 文件版本
 services:  # 定义所有服务
   nginx:  # Nginx服务配置
     image: nginx:alpine  # 使用Nginx Alpine轻量级镜像
-    container_name: ai-tools-mobile-nginx  # 容器名称
+    container_name: subscribe-nginx  # 容器名称
     ports:  # 端口映射
-      - "80:80"  # HTTP端口
-      - "443:443"  # HTTPS端口
-      - "8000:8000"
+      - "8001:8001"
     volumes:  # 卷映射
       - ../nginx/conf.d:/etc/nginx/conf.d  # Nginx配置文件
       - ../nginx/ssl:/etc/nginx/ssl  # SSL证书
