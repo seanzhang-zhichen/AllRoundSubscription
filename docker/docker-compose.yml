@@ -11,6 +11,4 @@ services:  # 定义所有服务
       - ../nginx/ssl:/etc/nginx/ssl  # SSL证书
       - ../nginx/logs:/var/log/nginx  # Nginx日志
       - ../nginx/html:/usr/share/nginx/html  # 前端静态文件
-    depends_on:  # 依赖关系
-      - backend  # 确保在启动Nginx之前启动后端服务
     restart: unless-stopped  # 除非手动停止，否则总是重启容器
