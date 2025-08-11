@@ -172,19 +172,43 @@ export default {
       await pageInteraction.retry(initializeData)
     }
 
-    // 刷新数据
-    const handleRefresh = async () => {
+    // 刷新数据（增加重试机制）
+    const handleRefresh = async (retryCount = 0) => {
       // 如果已经在刷新中，则不重复触发
       if (refreshing.value) {
         return;
       }
       
-      await pageInteraction.refreshData(
-        () => contentStore.refreshFeed(),
-        {
-          successMessage: '刷新成功'
+      try {
+        // 在刷新前检查认证状态
+        const token = uni.getStorageSync('token')
+        if (!token && isLoggedIn.value) {
+          console.warn('检测到认证状态不一致：登录状态为true但未找到令牌')
+          
+          if (retryCount === 0) {
+            console.log('延迟1秒后重试刷新操作...')
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            return handleRefresh(1) // 延迟1秒后重试一次
+          }
         }
-      )
+        
+        await pageInteraction.refreshData(
+          () => contentStore.refreshFeed(),
+          {
+            successMessage: '刷新成功'
+          }
+        )
+      } catch (error) {
+        console.error('刷新失败:', error)
+        
+        // 如果是首次尝试失败并且可能是认证问题，自动重试一次
+        if (retryCount === 0 && error.message && 
+            (error.message.includes('用户未登录') || error.message.includes('登录已过期'))) {
+          console.log('可能是认证问题导致刷新失败，等待1.5秒后重试...')
+          await new Promise(resolve => setTimeout(resolve, 1500))
+          return handleRefresh(1) // 延迟1.5秒后重试一次
+        }
+      }
     }
 
     // 加载更多数据
@@ -280,37 +304,76 @@ export default {
       await initializeData()
     })
 
-    // 页面显示时自动刷新
+    // 页面显示时自动刷新（增加安全检查）
     const lastRefreshTime = ref(0)
     onShow(() => {
-      const now = Date.now()
-      // 避免频繁刷新：两次刷新至少间隔30秒
-      if (now - lastRefreshTime.value > 30000) {
-        console.log('页面显示，自动刷新内容')
+      console.log('页面显示，准备自动刷新内容')
+      
+      // 检查认证状态后再刷新，避免在令牌未就绪时刷新
+      const checkAndRefresh = async () => {
+        // 先检查是否有令牌
+        const token = uni.getStorageSync('token')
+        
+        if (isLoggedIn.value && !token) {
+          console.log('检测到登录状态但令牌不存在，延迟刷新')
+          // 延迟1秒等待令牌就绪
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+        
+        console.log('开始自动刷新内容')
         handleRefresh()
-        lastRefreshTime.value = now
+        lastRefreshTime.value = Date.now()
       }
+      
+      checkAndRefresh()
     })
 
-    // 等待认证状态稳定
+    // 等待认证状态稳定和令牌就绪
     const waitForAuthState = async () => {
-      const maxWaitTime = 3000 // 最多等待3秒
+      const maxWaitTime = 8000 // 增加到8秒，给认证流程更多时间
       const startTime = Date.now()
+      let tokenReady = false
+      
+      console.log('开始等待认证状态稳定和令牌就绪...')
       
       while (Date.now() - startTime < maxWaitTime) {
         // 检查认证状态是否已经确定（无论是否登录）
         if (!authStore.loading) {
-          console.log('认证状态已确定:', isLoggedIn.value ? '已登录' : '未登录')
-          break
+          // 检查令牌是否存在并可用
+          const token = uni.getStorageSync('token')
+          
+          if (isLoggedIn.value && token) {
+            console.log('认证状态已就绪：已登录，令牌已存在')
+            tokenReady = true
+            break
+          } else if (!isLoggedIn.value) {
+            console.log('认证状态已就绪：未登录状态')
+            tokenReady = true
+            break
+          } else {
+            console.log('等待令牌就绪...')
+          }
+        } else {
+          console.log('等待认证状态稳定...')
         }
         
-        // 等待100ms后再次检查
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // 等待200ms后再次检查，稍微延长检查间隔减少CPU占用
+        await new Promise(resolve => setTimeout(resolve, 200))
       }
       
-      if (authStore.loading) {
-        console.warn('认证状态检查超时，继续加载页面')
+      if (!tokenReady) {
+        console.warn('认证状态或令牌就绪检查超时，可能导致内容加载失败')
+        
+        // 额外检查一次令牌
+        const token = uni.getStorageSync('token')
+        if (!token && isLoggedIn.value) {
+          console.error('认证状态不一致：登录状态为true但未找到令牌')
+        }
       }
+      
+      // 为确保后端认证就绪，无论如何都多等待一秒
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log('认证等待完成，准备加载内容')
     }
 
     // 注册生命周期钩子

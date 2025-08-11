@@ -1,9 +1,9 @@
 """
 推送记录相关数据模型
 """
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import relationship
-from app.models.base import BaseModel
+from app.db.database import Base
 from enum import Enum
 
 
@@ -15,10 +15,27 @@ class PushStatus(Enum):
     SKIPPED = "skipped"      # 跳过推送（达到限制等）
 
 
-class PushRecord(BaseModel):
+class PushRecord(Base):
     """推送记录模型"""
     __tablename__ = "push_records"
     
+    # 从BaseModel继承的属性
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, comment="主键ID")
+    created_at = Column(
+        DateTime,
+        default=func.now(),
+        nullable=False,
+        comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="更新时间"
+    )
+    
+    # PushRecord特有属性
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="用户ID")
     article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True, comment="文章ID")
     push_time = Column(DateTime, nullable=False, comment="推送时间")
@@ -31,6 +48,13 @@ class PushRecord(BaseModel):
     
     def __repr__(self):
         return f"<PushRecord(id={self.id}, user_id={self.user_id}, article_id={self.article_id}, status={self.status})>"
+    
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            column.name: getattr(self, column.name)
+            for column in self.__table__.columns
+        }
     
     @property
     def is_success(self) -> bool:

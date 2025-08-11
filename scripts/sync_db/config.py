@@ -21,12 +21,12 @@ TARGET_DB = {
     "password": "zhangzc123..",  # 修改为实际密码
     "host": "119.8.32.27",  # 修改为实际地址
     "port": 3306,
-    "database": "mergedb",
+    "database": "subminiprog",
     "charset": "utf8mb4"
 }
 
 # 同步间隔（秒）
-SYNC_INTERVAL = 60
+SYNC_INTERVAL = 600  # 每小时执行一次
 
 # 日志配置
 LOG_CONFIG = {

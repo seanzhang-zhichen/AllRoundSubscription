@@ -1,9 +1,9 @@
 """
 用户相关数据模型
 """
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, func
 from sqlalchemy.orm import relationship
-from app.models.base import BaseModel
+from app.db.database import Base
 from enum import Enum
 from datetime import datetime
 
@@ -22,10 +22,27 @@ class MembershipLevel(Enum):
     PREMIUM = "premium"
 
 
-class User(BaseModel):
+class User(Base):
     """用户模型"""
     __tablename__ = "users"
     
+    # 从BaseModel继承的属性
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, comment="主键ID")
+    created_at = Column(
+        DateTime,
+        default=func.now(),
+        nullable=False,
+        comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="更新时间"
+    )
+    
+    # User特有属性
     openid = Column(String(128), unique=True, nullable=False, index=True, comment="微信openid")
     nickname = Column(String(100), nullable=True, comment="用户昵称")
     avatar_url = Column(String(500), nullable=True, comment="头像URL")
@@ -43,6 +60,13 @@ class User(BaseModel):
     
     def __repr__(self):
         return f"<User(id={self.id}, openid={self.openid}, nickname={self.nickname})>"
+    
+    def to_dict(self):
+        """转换为字典"""
+        return {
+            column.name: getattr(self, column.name)
+            for column in self.__table__.columns
+        }
     
     @property
     def is_premium(self) -> bool:

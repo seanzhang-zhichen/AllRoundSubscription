@@ -5,9 +5,10 @@ import time
 import logging
 import json
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, JSON, ForeignKey, BigInteger
+from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, JSON, ForeignKey, BigInteger, Index, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
 # 导入配置
 from config import SOURCE_DB, TARGET_DB, SYNC_INTERVAL, LOG_CONFIG
@@ -65,12 +66,18 @@ class SourceArticle(SourceBase):
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
     is_export = Column(Integer)
+    summary = Column(Text)
 
-# 定义目标数据库模型
+# 定义目标数据库模型 - 根据提供的模型结构更新
 TargetBase = declarative_base()
 
 class TargetAccount(TargetBase):
-    __tablename__ = 'accounts'
+    """账号模型 (博主)"""
+    __tablename__ = "accounts"
+    __table_args__ = (
+        Index("ux_accounts_account_id", "account_id", unique=True),
+        UniqueConstraint("platform", "account_id", name="uq_platform_account_id"),
+    )
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False, comment="账号名称")
@@ -78,34 +85,35 @@ class TargetAccount(TargetBase):
     account_id = Column(String(200), nullable=False, comment="平台账号ID")
     avatar_url = Column(String(500), nullable=True, comment="头像URL")
     description = Column(Text, nullable=True, comment="账号描述")
-    follower_count = Column(Integer, default=0, comment="粉丝数量")
     details = Column(JSON, nullable=True, comment="平台特定详细信息")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
-    articles = relationship("TargetArticle", back_populates="account")
+    # 关系定义
+    articles = relationship("TargetArticle", back_populates="account", primaryjoin="TargetAccount.account_id == TargetArticle.account_id")
 
 class TargetArticle(TargetBase):
-    __tablename__ = 'articles'
+    """文章模型"""
+    __tablename__ = "articles"
+    __table_args__ = (
+        Index("ux_articles_url_prefix", "url", mysql_length=768, unique=True),
+    )
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True, comment="账号ID")
+    account_id = Column(String(200), ForeignKey("accounts.account_id"), nullable=False, index=True, comment="账号ID")
     title = Column(String(500), nullable=False, comment="文章标题")
     url = Column(String(1000), nullable=False, comment="文章链接")
-    content = Column(Text(length=4294967295).with_variant(Text(length=4294967295), "mysql", "mariadb"), nullable=True, comment="文章内容")
-    summary = Column(Text(length=4294967295).with_variant(Text(length=4294967295), "mysql", "mariadb"), nullable=True, comment="文章摘要")
+    content = Column(MEDIUMTEXT, nullable=True, comment="文章内容")
+    summary = Column(Text, nullable=True, comment="文章摘要")
     publish_time = Column(DateTime, nullable=False, comment="发布时间")
-    publish_timestamp = Column(BigInteger, nullable=False, index=True, comment="发布时间戳")
-    images = Column(JSON, nullable=True, comment="图片链接列表")
     details = Column(JSON, nullable=True, comment="平台特定详细信息")
+    cover_url = Column(String(500), nullable=True, comment="封面图片URL")
+    platform = Column(String(50), nullable=False, comment="平台类型")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
-    account = relationship("TargetAccount", back_populates="articles")
-    
-    
-    # 重新定义索引，避免在完整URL上创建唯一索引
-    # 实现在迁移脚本中手动添加：CREATE UNIQUE INDEX ix_article_url ON articles (url(768));
+    # 关系定义
+    account = relationship("TargetAccount", back_populates="articles", foreign_keys=[account_id], primaryjoin="TargetArticle.account_id == TargetAccount.account_id")
 
 def sync_feeds_to_accounts():
     """同步feeds表到accounts表"""
@@ -126,53 +134,70 @@ def sync_feeds_to_accounts():
         
         logger.info(f"开始同步feeds表，共 {len(feeds)} 条记录")
         
-        # 同步feeds到accounts
-        for feed in feeds:
-            # 查找或创建对应的account
-            account = target_session.query(TargetAccount).filter_by(
-                account_id=feed.id,
-                platform="wechat"
-            ).first()
+        # 使用no_autoflush上下文来避免premature flush
+        with target_session.no_autoflush:
+            # 预先加载所有现有的accounts，避免在循环中查询时触发autoflush
+            feed_ids = [feed.id for feed in feeds if feed.id]
+            existing_accounts_map = {}
+            if feed_ids:
+                existing_accounts = target_session.query(TargetAccount).filter(
+                    TargetAccount.account_id.in_(feed_ids),
+                    TargetAccount.platform == "wechat"
+                ).all()
+                existing_accounts_map = {account.account_id: account for account in existing_accounts}
             
-            if not account:
-                account = TargetAccount(
-                    name=feed.mp_name,
-                    platform="wechat",
-                    account_id=feed.id,
-                    avatar_url=feed.mp_cover,
-                    description=feed.mp_intro,
-                    follower_count=0,
-                    details=json.dumps({
-                        "original_id": feed.id,
-                        "faker_id": feed.faker_id,
-                        "source": "sub_database"
-                    }),
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                )
-                target_session.add(account)
-            else:
-                account.name = feed.mp_name
-                account.avatar_url = feed.mp_cover
-                account.description = feed.mp_intro
-                account.updated_at = datetime.now()
-                account.details = json.dumps({
-                    "original_id": feed.id,
-                    "faker_id": feed.faker_id,
-                    "source": "sub_database"
-                })
-            
-        # 提交事务
-        target_session.commit()
+            # 同步feeds到accounts
+            new_accounts_count = 0
+            updated_accounts_count = 0
+            for feed in feeds:
+                # 使用预加载的account数据
+                account = existing_accounts_map.get(feed.id)
+                
+                if not account:
+                    account = TargetAccount(
+                        name=feed.mp_name,
+                        platform="wechat",
+                        account_id=feed.id,
+                        avatar_url=feed.mp_cover,
+                        description=feed.mp_intro,
+                        details={
+                            "faker_id": feed.faker_id,
+                        },
+                        created_at=datetime.now(),
+                        updated_at=datetime.now()
+                    )
+                    target_session.add(account)
+                    new_accounts_count += 1
+                    logger.info(f"创建账号: {feed.mp_name}")
+                else:
+                    # 更新现有账号信息
+                    if account.name != feed.mp_name or account.avatar_url != feed.mp_cover or account.description != feed.mp_intro:
+                        account.name = feed.mp_name
+                        account.avatar_url = feed.mp_cover
+                        account.description = feed.mp_intro
+                        account.updated_at = datetime.now()
+                        updated_accounts_count += 1
+                        logger.info(f"更新账号: {feed.mp_name}")
+        
+        # 在no_autoflush块外进行提交
+        if new_accounts_count > 0 or updated_accounts_count > 0:
+            logger.info(f"准备提交 {new_accounts_count} 个新账号，{updated_accounts_count} 个更新账号")
+            target_session.commit()
+            logger.info(f"成功提交 {new_accounts_count} 个新账号，{updated_accounts_count} 个更新账号")
+        else:
+            logger.info("没有账号需要同步")
         
         # 更新同步时间
         update_sync_time('feeds', datetime.now())
         
-        logger.info(f"feeds表同步完成")
+        logger.info(f"feeds表同步完成，新增 {new_accounts_count} 个账号，更新 {updated_accounts_count} 个账号")
     
     except Exception as e:
         target_session.rollback()
         logger.error(f"同步feeds表时出错: {str(e)}")
+        import traceback
+        logger.error(f"详细错误信息: {traceback.format_exc()}")
+        raise
     
     finally:
         source_session.close()
@@ -197,82 +222,90 @@ def sync_articles():
         
         logger.info(f"开始同步articles表，共 {len(articles)} 条记录")
         
-        # 同步articles到target_articles
-        for article in articles:
-            # 查找对应的account
-            account = target_session.query(TargetAccount).filter_by(
-                account_id=article.mp_id,
-                platform="wechat"
-            ).first()
+        # 使用no_autoflush上下文来避免premature flush
+        with target_session.no_autoflush:
+            # 预先加载所有需要的accounts到内存中，避免在循环中查询时触发autoflush
+            account_ids = list(set([article.mp_id for article in articles if article.mp_id]))
+            accounts_map = {}
+            if account_ids:
+                accounts = target_session.query(TargetAccount).filter(
+                    TargetAccount.account_id.in_(account_ids),
+                    TargetAccount.platform == "wechat"
+                ).all()
+                accounts_map = {account.account_id: account for account in accounts}
             
-            if not account:
-                logger.warning(f"找不到对应的账号: mp_id={article.mp_id}")
-                continue
+            # 预先加载所有现有文章的URL，避免在循环中查询时触发autoflush
+            article_urls = [article.url for article in articles if article.url]
+            existing_articles_map = {}
+            if article_urls:
+                existing_articles = target_session.query(TargetArticle).filter(
+                    TargetArticle.url.in_(article_urls)
+                ).all()
+                existing_articles_map = {article.url: article for article in existing_articles}
+            
+            # 同步articles到target_articles
+            new_articles_count = 0
+            for article in articles:
+                # 使用预加载的account数据
+                account = accounts_map.get(article.mp_id)
                 
-            # 处理发布时间
-            if article.publish_time:
-                publish_datetime = datetime.fromtimestamp(article.publish_time)
-                publish_timestamp = article.publish_time
-            else:
-                publish_datetime = datetime.now()
-                publish_timestamp = int(publish_datetime.timestamp())
-            
-            # 处理图片
-            images = []
-            if article.pic_url:
-                images.append(article.pic_url)
-            
-            # 查找或创建对应的文章
-            target_article = target_session.query(TargetArticle).filter_by(
-                url=article.url
-            ).first()
-            
-            if not target_article:
-                target_article = TargetArticle(
-                    account_id=account.id,
-                    title=article.title if article.title else "",
-                    url=article.url if article.url else "",
-                    content=article.content,
-                    summary=article.description,
-                    publish_time=publish_datetime,
-                    publish_timestamp=publish_timestamp,
-                    images=json.dumps(images) if images else None,
-                    details=json.dumps({
-                        "original_id": article.id,
-                        "source": "sub_database",
-                        "status": article.status,
-                        "is_export": article.is_export
-                    }),
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                )
-                target_session.add(target_article)
-            else:
-                target_article.title = article.title if article.title else ""
-                target_article.content = article.content
-                target_article.summary = article.description
-                target_article.publish_time = publish_datetime
-                target_article.publish_timestamp = publish_timestamp
-                target_article.images = json.dumps(images) if images else None
-                target_article.details = json.dumps({
-                    "original_id": article.id,
-                    "source": "sub_database",
-                    "status": article.status,
-                    "is_export": article.is_export
-                })
-                target_article.updated_at = datetime.now()
+                if not account:
+                    logger.warning(f"找不到对应的账号: mp_id={article.mp_id}")
+                    continue
+                    
+                # 处理发布时间
+                if article.publish_time:
+                    publish_datetime = datetime.fromtimestamp(article.publish_time)
+                else:
+                    publish_datetime = datetime.now()
                 
-        # 提交事务
-        target_session.commit()
+                # 使用预加载的文章数据
+                target_article = existing_articles_map.get(article.url)
+                
+                if not target_article:
+                    content = article.content
+                    
+                    target_article = TargetArticle(
+                        account_id=article.mp_id,
+                        title=article.title[:500] if article.title else "",
+                        url=article.url if article.url else "",
+                        content=content,
+                        platform="wechat",
+                        summary=article.summary,
+                        publish_time=publish_datetime,
+                        cover_url=article.pic_url,
+                        details={
+                            "status": article.status,
+                            "is_export": article.is_export,
+                            "description": article.description,
+                            "images": [article.pic_url] if article.pic_url else []
+                        },
+                        created_at=datetime.now(),
+                        updated_at=datetime.now()
+                    )
+                    target_session.add(target_article)
+                    new_articles_count += 1
+                    logger.info(f"创建文章: {article.title}")
+        
+        # 在no_autoflush块外进行提交
+        if new_articles_count > 0:
+            logger.info(f"准备提交 {new_articles_count} 篇新文章")
+            target_session.commit()
+            logger.info(f"成功提交 {new_articles_count} 篇新文章")
+        else:
+            logger.info("没有新文章需要同步")
         
         # 更新同步时间
         update_sync_time('articles', datetime.now())
         
-        logger.info(f"articles表同步完成")
+        logger.info(f"articles表同步完成，新增 {new_articles_count} 篇文章")
     
     except Exception as e:
         target_session.rollback()
         logger.error(f"同步articles表时出错: {str(e)}")
+        import traceback
+        logger.error(f"详细错误信息: {traceback.format_exc()}")
+        raise
     
     finally:
         source_session.close()
@@ -349,15 +382,32 @@ def main():
     
     while True:
         try:
+            start_time = datetime.now()
+            logger.info(f"开始执行每小时同步任务: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            
             # 同步feeds表到accounts表
             sync_feeds_to_accounts()
             
             # 同步articles表
             sync_articles()
             
-            # 等待一段时间后再次同步
-            logger.info(f"等待 {SYNC_INTERVAL} 秒后进行下一次同步...")
-            time.sleep(SYNC_INTERVAL)
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            logger.info(f"本次同步任务完成，耗时 {duration:.2f} 秒")
+            
+            # 计算需要等待的时间，确保每小时整点执行
+            next_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+            next_hour = next_hour.replace(hour=next_hour.hour + 1)
+            wait_seconds = (next_hour - datetime.now()).total_seconds()
+            
+            # 如果计算出的等待时间小于0或大于SYNC_INTERVAL，则使用SYNC_INTERVAL
+            if wait_seconds <= 0 or wait_seconds > SYNC_INTERVAL:
+                wait_seconds = SYNC_INTERVAL
+                
+            from datetime import timedelta
+            next_sync_time = datetime.now() + timedelta(seconds=wait_seconds)
+            logger.info(f"等待 {wait_seconds:.2f} 秒后进行下一次同步，预计下次同步时间: {next_sync_time.strftime('%Y-%m-%d %H:%M:%S')}...")
+            time.sleep(wait_seconds)
             
         except KeyboardInterrupt:
             logger.info("程序被手动中断")
