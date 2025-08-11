@@ -60,6 +60,11 @@ class SubscriptionService:
             user_id = subscription_data.user_id
             account_id = subscription_data.account_id
             platform = subscription_data.platform
+            source = subscription_data.source
+
+            print("====="*10)
+            print(f"订阅参数： {subscription_data}")
+            print("====="*10)
             
             # 检查用户是否存在
             user = await self._get_user_by_id(db, user_id)
@@ -67,7 +72,13 @@ class SubscriptionService:
                 raise NotFoundException("用户不存在")
             
             # 优先通过平台和账号ID查找账号
-            account = await search_service.get_account_by_platform_id(platform, account_id)
+            if source == 'included':
+                account = await search_service.get_account_by_platform_id(platform, account_id)
+            elif source == 'search':
+                logger.info(f"开始添加账号: {subscription_data}")
+                account = await search_service.add_account(platform, mp_name=subscription_data.mp_name, avatar=subscription_data.avatar, mp_id=subscription_data.account_id, mp_intro=subscription_data.mp_intro)
+            else:
+                raise ValueError(f"无效的订阅来源: {source}")
             
             if not account:
                 raise NotFoundException(f"在平台 {platform} 上未找到账号 {account_id}")
@@ -120,6 +131,7 @@ class SubscriptionService:
         user_id: int, 
         account_id: str, 
         platform: str,
+        source: str,
         db: AsyncSession
     ) -> bool:
         """
@@ -138,6 +150,14 @@ class SubscriptionService:
             NotFoundException: 订阅关系不存在
         """
         try:
+            print("====="*10)
+            print(f"删除订阅: {user_id}, {account_id}, {platform}, {source}")
+            print("====="*10)
+            
+
+            if source == "search":
+                account_id = await search_service.get_id_by_faker_id(account_id, platform)
+
             subscription_query = (
                 select(Subscription)
                 .where(
@@ -472,6 +492,7 @@ class SubscriptionService:
         user_id: int, 
         account_id: str, 
         platform: str,
+        source: str,
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
@@ -487,35 +508,56 @@ class SubscriptionService:
             订阅状态信息
         """
         try:
-            # 通过platform和account_id查找账号
-            account = await search_service.get_account_by_platform_id(platform, account_id)
-            
+
+            print("====="*10)
+            print(f"检查订阅状态: {user_id}, {account_id}, {platform}, {source}")
+            print("====="*10)
+
+            if source == "search":
+                real_account_id = await search_service.get_id_by_faker_id(account_id, platform)
+                print("====="*10)
+                print(f"根据faker_id查询账号的id: {real_account_id}")
+                print("====="*10)
+                if real_account_id is None:
+                    # 检查是否可以订阅（如果未订阅）
+                    can_subscribe = True
+                    limit_info = None
+
+                    try:
+                        limit_info = await limits_service.check_subscription_limit(
+                            user_id, db, raise_exception=False
+                        )
+                        can_subscribe = limit_info["can_subscribe"]
+                    except Exception as e:
+                        logger.warning(f"检查订阅限制失败，用户ID: {user_id}, 错误: {str(e)}")
+                        can_subscribe = False
+                    return {
+                        "user_id": user_id,
+                        "account_id": account_id,
+                        "platform": platform,
+                        "is_subscribed": False,
+                        "subscription_id": None,
+                        "subscription_time": None,
+                        "can_subscribe": can_subscribe,
+                        "limit_info": limit_info
+                    }
+                else:
+                    account_id = real_account_id
+
             # 查找订阅记录
             subscription = None
-            if account:
-                # 如果找到了账号，使用账号ID查找订阅
-                subscription_query = (
-                    select(Subscription)
-                    .where(
-                        and_(
-                            Subscription.user_id == user_id,
-                            Subscription.account_id == account.id,
-                            Subscription.platform == platform
-                        )
+
+            # 如果找到了账号，使用账号ID查找订阅
+            subscription_query = (
+                select(Subscription)
+                .where(
+                    and_(
+                        Subscription.user_id == user_id,
+                        Subscription.account_id == account_id,
+                        Subscription.platform == platform
                     )
                 )
-            else:
-                # 如果找不到账号，尝试直接通过account_id和platform查找订阅
-                subscription_query = (
-                    select(Subscription)
-                    .where(
-                        and_(
-                            Subscription.user_id == user_id,
-                            Subscription.account_id == account_id,
-                            Subscription.platform == platform
-                        )
-                    )
-                )
+            )
             
             result = await db.execute(subscription_query)
             subscription = result.scalar_one_or_none()
@@ -555,8 +597,9 @@ class SubscriptionService:
             )
             
             return status
-            
+
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"检查订阅状态失败: {str(e)}", exc_info=True)
             raise BusinessException(
                 error_code=ErrorCode.DATABASE_ERROR,

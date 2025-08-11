@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     WECHAT_RSS_API_URL: str = ""
     WECHAT_RSS_API_USERNAME: str = ""
     WECHAT_RSS_API_PASSWORD: str = ""
+    WECHAT_RSS_DB_URL: str = ""
+
     
     # 微信服务号配置
     WECHAT_SERVICE_APP_ID: str = ""
@@ -49,6 +51,17 @@ class Settings(BaseSettings):
     WECHAT_TEMPLATE_ID: str = ""  # 推送消息模板ID
     WECHAT_MINI_PROGRAM_APP_ID: str = ""  # 小程序AppID（用于跳转）
     WECHAT_MINI_PROGRAM_PATH: str = "pages/article/detail"  # 小程序跳转路径
+    # 微信支付V3配置（用于 WeChatPayHelper）
+    # 以下字段需要在生产环境中配置为真实值
+    WXPAY_MCHID: str = ""  # 商户号
+    WXPAY_APPID: str = ""  # 支付所使用的AppID（小程序/公众号/APP）
+    WXPAY_SERIAL_NO: str = ""  # 商户证书序列号
+    WXPAY_API_V3_KEY: str = ""  # APIv3 密钥
+    WXPAY_NOTIFY_URL: str = "/api/v1/payments/wechat/notify"  # 回调通知URL（可被反代覆盖为公网）
+    WXPAY_PRIVATE_KEY_PATH: str = ""  # 商户私钥路径（PEM）
+    WXPAY_PUBLIC_KEY_PATH: str = ""  # 商户公钥路径（如需）
+    WXPAY_PUBLIC_KEY_ID: str = ""  # 商户公钥ID（如库需要）
+    WXPAY_PLATFORM_CERT_DIR: str = "./certs"  # 平台证书缓存目录
     
     # 日志配置
     LOG_LEVEL: str = "INFO"
@@ -70,7 +83,7 @@ class Settings(BaseSettings):
                 return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
             return self.REDIS_URL
         return self.REDIS_URL
-    
+
     @property
     def celery_broker_url_with_auth(self) -> str:
         """获取带认证的Celery Broker URL"""
@@ -80,7 +93,7 @@ class Settings(BaseSettings):
                 return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
             return self.CELERY_BROKER_URL
         return self.CELERY_BROKER_URL
-    
+
     @property
     def celery_result_backend_with_auth(self) -> str:
         """获取带认证的Celery Result Backend URL"""
@@ -90,22 +103,22 @@ class Settings(BaseSettings):
                 return f"{protocol}://:{self.REDIS_PASSWORD}@{rest}"
             return self.CELERY_RESULT_BACKEND
         return self.CELERY_RESULT_BACKEND
-    
+
     # 监控配置
     ENABLE_MONITORING: bool = True
     ENABLE_METRICS: bool = True
     ENABLE_REDIS_METRICS: bool = False
-    
+
     @property
     def database_url(self) -> str:
         """获取数据库连接URL"""
         if self.DATABASE_URL:
             return self.DATABASE_URL
         return self.SQLITE_URL
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True
-
-
+ 
+ 
 settings = Settings()

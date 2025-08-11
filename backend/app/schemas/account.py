@@ -53,7 +53,7 @@ class AccountUpdate(BaseModel):
 
 class AccountResponse(AccountBase):
     """账号响应模型"""
-    id: Union[int, str] = Field(..., description="账号ID")
+    id: str = Field(..., description="账号ID")
     created_at: datetime = Field(description="创建时间")
     updated_at: datetime = Field(description="更新时间")
     platform_display_name: str = Field(description="平台显示名称")

@@ -137,6 +137,12 @@ export default {
     const loadingArticles = ref(false)
     const currentPage = ref(1)
     const accountId = ref(null)
+    const source = ref('included') // 默认为 'included'
+    // 新增参数
+    const mpName = ref(null)
+    const mpId = ref(null)
+    const avatarUrl = ref(null)
+    const mpIntro = ref(null)
 
     // 计算属性
     const isLoggedIn = computed(() => authStore.isLoggedIn)
@@ -154,6 +160,13 @@ export default {
         
         accountId.value = options.id
         const platform = options.platform
+        source.value = options.source || 'included'
+        
+        // 获取新增参数
+        mpName.value = options.mp_name || null
+        mpId.value = options.mp_id || null
+        avatarUrl.value = options.avatar || null
+        mpIntro.value = options.mp_intro || null
         
         if (!accountId.value) {
           throw new Error('缺少博主ID参数')
@@ -188,9 +201,35 @@ export default {
         if (accountInfo.value && accountInfo.value.platform) {
           params.platform = accountInfo.value.platform
         }
+        
+        // 添加新增参数
+        if (source.value) {
+          params.source = source.value
+        }
+        
+        if (mpName.value) {
+          params.mp_name = mpName.value
+        }
+        
+        if (mpId.value) {
+          params.mp_id = mpId.value
+        }
+        
+        if (avatarUrl.value) {
+          params.avatar = avatarUrl.value
+        }
+        
+        if (mpIntro.value) {
+          params.mp_intro = mpIntro.value
+        }
 
         const data = await request.get(`/search/accounts/by-id/${accountId.value}`, params)
         accountInfo.value = data
+        
+        // 恢复使用本地方法检查订阅状态，保证快速响应
+        if (isLoggedIn.value) {
+          console.log('检查账号订阅状态(本地方法):', subscriptionStore.isSubscribed(accountId.value))
+        }
       } catch (error) {
         console.error('加载博主信息失败:', error)
         throw new Error('加载博主信息失败')
@@ -263,12 +302,12 @@ export default {
 
       try {
         if (isSubscribed.value) {
-          // 取消订阅，确保传递平台参数
+          // 取消订阅，确保传递平台参数和来源参数
           if (!accountInfo.value || !accountInfo.value.platform) {
             console.warn('取消订阅时缺少平台信息，使用默认值')
           }
           const platform = accountInfo.value?.platform || 'unknown'
-          await subscriptionStore.unsubscribeByAccountId(accountId.value, platform)
+          await subscriptionStore.unsubscribeByAccountId(accountId.value, platform, source.value)
         } else {
           // 创建订阅
           if (!accountInfo.value || !accountInfo.value.platform) {
@@ -278,8 +317,11 @@ export default {
             })
             return
           }
-          // 创建订阅，传递平台信息
-          await subscriptionStore.subscribeAccount(accountId.value, accountInfo.value.platform)
+          // 创建订阅，传递平台信息和订阅来源
+          await subscriptionStore.subscribeAccount(
+            accountInfo.value,
+            source.value
+          )
         }
       } catch (error) {
         console.error('订阅操作失败:', error)

@@ -57,3 +57,6 @@ python-dotenv==1.0.0
 # Production utilities
 click==8.1.7
 rich==13.7.0
+
+# Payments
+wechatpayv3==1.2.29

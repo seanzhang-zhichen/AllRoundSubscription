@@ -3,6 +3,7 @@
 """
 import time
 import traceback
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, Path, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +34,7 @@ router = APIRouter()
 async def search_accounts(
     keyword: Optional[str] = Query(None, min_length=1, max_length=100, description="搜索关键词，为空时获取所有博主"),
     platforms: Optional[str] = Query(None, description="指定平台列表，用逗号分隔"),
-    page: int = Query(default=1, ge=1, description="页码"),
+    page: int = Query(default=0, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页大小"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -384,6 +385,7 @@ async def get_account_by_id(
     
     - **account_id**: 账号ID
     - **platform**: 平台类型，如wechat、weibo、twitter等
+    - **source**: 订阅来源，如search、included
     
     返回账号详细信息
     """

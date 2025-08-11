@@ -71,6 +71,7 @@ async def create_subscription(
 async def delete_subscription(
     account_id: str = Path(..., description="账号ID"),
     platform: str = Query(..., description="平台类型（必填）"),
+    source: str = Query(..., description="订阅来源（必填）"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -82,7 +83,7 @@ async def delete_subscription(
     """
     try:
         result = await subscription_service.delete_subscription(
-            current_user.id, account_id, platform, db
+            current_user.id, account_id, platform, source, db
         )
         
         return DataResponse(
@@ -229,6 +230,7 @@ async def batch_create_subscriptions(
 async def check_subscription_status(
     account_id: str = Path(..., description="账号ID"),
     platform: str = Query(..., description="平台类型（必填）"),
+    source: str = Query(..., description="订阅来源（必填）"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -237,12 +239,13 @@ async def check_subscription_status(
     
     - **account_id**: 账号ID
     - **platform**: 必填参数，平台类型
+    - **source**: 订阅来源（必填）搜索：search, 收录：included
     
     返回订阅状态信息，包括是否已订阅、订阅ID、可否订阅等
     """
     try:
         result = await subscription_service.check_subscription_status(
-            current_user.id, account_id, platform, db
+            current_user.id, account_id, platform, source, db
         )
         
         return DataResponse(

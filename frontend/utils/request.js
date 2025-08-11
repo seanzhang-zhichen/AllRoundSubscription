@@ -49,6 +49,60 @@ class Request {
         console.warn('未找到认证令牌，请求可能失败')
       }
       
+      // 添加详细诊断日志
+      const authStore = uni.getStorageSync('pinia-auth')
+      const userStore = uni.getStorageSync('pinia-user')
+      
+      // 用于订阅API的特殊调试
+      if (config.url && (config.url.includes('/subscriptions') || config.url.includes('/search/accounts'))) {
+        console.log('======= 关键请求诊断 =======')
+        console.log('请求URL:', config.url)
+        console.log('请求方法:', config.method)
+        console.log('认证令牌:', token ? `${token.substring(0, 10)}...` : 'null')
+        console.log('认证状态(存储):', authStore ? JSON.parse(authStore).isLoggedIn : 'unknown')
+        
+        if (userStore) {
+          try {
+            const userData = JSON.parse(userStore)
+            console.log('用户ID(存储):', userData.userInfo ? userData.userInfo.id : 'missing')
+          } catch(e) {
+            console.log('用户数据解析错误:', e)
+          }
+        }
+        
+        // 专门针对搜索接口的参数日志
+        if (config.url.includes('/search/accounts')) {
+          console.log('===== 搜索接口参数 =====')
+          // 手动解析URL参数而不使用URL构造函数
+          const parseUrlParams = (url) => {
+            try {
+              const paramsStr = url.split('?')[1] || '';
+              const result = {};
+              if (!paramsStr) return result;
+              
+              const pairs = paramsStr.split('&');
+              for (const pair of pairs) {
+                const [key, value] = pair.split('=');
+                if (key) result[decodeURIComponent(key)] = decodeURIComponent(value || '');
+              }
+              return result;
+            } catch (e) {
+              console.error('解析URL参数失败:', e);
+              return {};
+            }
+          };
+          
+          const params = parseUrlParams(config.url);
+          console.log('keyword:', params.keyword || '未指定(获取全部)');
+          console.log('platforms:', params.platforms || '全部平台');
+          console.log('page:', params.page || '0');
+          console.log('page_size:', params.page_size || '默认');
+          console.log('========================')
+        }
+        
+        console.log('=========================')
+      }
+      
       // 添加请求ID用于调试
       config.header['X-Request-ID'] = this.generateRequestId()
       
@@ -79,6 +133,25 @@ class Request {
           console.log('===== 订阅接口响应结束 =====')
         }
         
+        // 添加针对搜索接口的特殊调试
+        if (response.url && response.url.includes('/search/accounts')) {
+          console.log('===== 搜索接口响应详情 =====')
+          console.log('请求URL:', response.url)
+          console.log('状态码:', response.statusCode)
+          console.log('响应数据结构类型:', typeof response.data)
+          if (response.data) {
+            console.log('返回码:', response.data.code)
+            console.log('消息:', response.data.message)
+            if (response.data.data) {
+              console.log('数据类型:', typeof response.data.data)
+              console.log('是否包含accounts:', Array.isArray(response.data.data.accounts))
+              console.log('账号数量:', response.data.data.accounts ? response.data.data.accounts.length : 0)
+              console.log('总数:', response.data.data.total)
+            }
+          }
+          console.log('===== 搜索接口响应结束 =====')
+        }
+        
         // 检查HTTP状态码
         if (response.statusCode >= 200 && response.statusCode < 300) {
           const data = response.data
@@ -87,8 +160,13 @@ class Request {
           if (data && data.code === 200) {
             // 对于分页响应，返回完整的响应对象（包含data, total, page等）
             // 对于普通响应，返回data字段
-            if (data.total !== undefined && data.page !== undefined) {
+            if (data.total !== undefined && (data.page !== undefined || data.total_pages !== undefined)) {
               console.log('检测到分页响应，保留完整响应对象')
+              console.log('分页信息:', { 
+                total: data.total, 
+                page: data.page || 1, 
+                total_pages: data.total_pages || Math.ceil(data.total / (data.page_size || 20))
+              })
               return data // 返回完整的分页响应
             } else if (data.data !== undefined) {
               console.log('检测到普通响应，返回data字段')

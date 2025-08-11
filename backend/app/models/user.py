@@ -11,6 +11,13 @@ from datetime import datetime
 class MembershipLevel(Enum):
     """会员等级枚举"""
     FREE = "free"
+    # 新增多等级VIP（V1-V5）
+    V1 = "v1"
+    V2 = "v2"
+    V3 = "v3"
+    V4 = "v4"
+    V5 = "v5"
+    # 兼容旧值
     BASIC = "basic"
     PREMIUM = "premium"
 
@@ -58,8 +65,11 @@ class User(BaseModel):
         
         limits = {
             MembershipLevel.FREE: 10,
-            MembershipLevel.BASIC: 50,
-            MembershipLevel.PREMIUM: -1  # 无限制
+            MembershipLevel.V1: 20,
+            MembershipLevel.V2: 50,
+            MembershipLevel.V3: 100,
+            MembershipLevel.V4: 300,
+            MembershipLevel.V5: -1,
         }
         return limits.get(self.membership_level, 10)
     
@@ -70,7 +80,10 @@ class User(BaseModel):
         
         limits = {
             MembershipLevel.FREE: 5,
-            MembershipLevel.BASIC: 20,
-            MembershipLevel.PREMIUM: -1  # 无限制
+            MembershipLevel.V1: 10,
+            MembershipLevel.V2: 20,
+            MembershipLevel.V3: 50,
+            MembershipLevel.V4: 200,
+            MembershipLevel.V5: -1,
         }
         return limits.get(self.membership_level, 5)

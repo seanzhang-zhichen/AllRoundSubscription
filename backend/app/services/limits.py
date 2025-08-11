@@ -310,8 +310,11 @@ class LimitsService:
         """获取会员等级显示名称"""
         names = {
             MembershipLevel.FREE: "免费用户",
-            MembershipLevel.BASIC: "基础会员",
-            MembershipLevel.PREMIUM: "高级会员"
+            MembershipLevel.V1: "V1 会员",
+            MembershipLevel.V2: "V2 会员",
+            MembershipLevel.V3: "V3 会员",
+            MembershipLevel.V4: "V4 会员",
+            MembershipLevel.V5: "V5 会员",
         }
         return names.get(level, "未知等级")
     
@@ -330,7 +333,14 @@ class LimitsService:
     
     def _get_level_comparison(self, current_level: MembershipLevel) -> Dict[str, Any]:
         """获取等级对比信息"""
-        all_levels = [MembershipLevel.FREE, MembershipLevel.BASIC, MembershipLevel.PREMIUM]
+        all_levels = [
+            MembershipLevel.FREE,
+            MembershipLevel.V1,
+            MembershipLevel.V2,
+            MembershipLevel.V3,
+            MembershipLevel.V4,
+            MembershipLevel.V5
+        ]
         current_index = all_levels.index(current_level)
         
         comparison = {
@@ -379,8 +389,11 @@ class LimitsService:
                 "feature": feature["name"],
                 "type": feature["type"],
                 "free": self._get_feature_value(MembershipLevel.FREE, feature["key"], feature["type"]),
-                "basic": self._get_feature_value(MembershipLevel.BASIC, feature["key"], feature["type"]),
-                "premium": self._get_feature_value(MembershipLevel.PREMIUM, feature["key"], feature["type"])
+                "v1": self._get_feature_value(MembershipLevel.V1, feature["key"], feature["type"]),
+                "v2": self._get_feature_value(MembershipLevel.V2, feature["key"], feature["type"]),
+                "v3": self._get_feature_value(MembershipLevel.V3, feature["key"], feature["type"]),
+                "v4": self._get_feature_value(MembershipLevel.V4, feature["key"], feature["type"]),
+                "v5": self._get_feature_value(MembershipLevel.V5, feature["key"], feature["type"])
             }
             table.append(row)
         
@@ -404,35 +417,11 @@ class LimitsService:
     def _get_upgrade_paths(self) -> List[Dict[str, Any]]:
         """获取升级路径信息"""
         paths = [
-            {
-                "from": MembershipLevel.FREE.value,
-                "to": MembershipLevel.BASIC.value,
-                "benefits": [
-                    "订阅数量从10个增加到50个",
-                    "每日推送从5次增加到20次",
-                    "获得高级搜索功能",
-                    "享受优先客服支持"
-                ]
-            },
-            {
-                "from": MembershipLevel.BASIC.value,
-                "to": MembershipLevel.PREMIUM.value,
-                "benefits": [
-                    "无限订阅数量",
-                    "无限推送次数",
-                    "专属功能抢先体验",
-                    "数据导出功能"
-                ]
-            },
-            {
-                "from": MembershipLevel.FREE.value,
-                "to": MembershipLevel.PREMIUM.value,
-                "benefits": [
-                    "无限订阅和推送",
-                    "全部高级功能",
-                    "最佳用户体验"
-                ]
-            }
+            {"from": MembershipLevel.FREE.value, "to": MembershipLevel.V1.value},
+            {"from": MembershipLevel.V1.value, "to": MembershipLevel.V2.value},
+            {"from": MembershipLevel.V2.value, "to": MembershipLevel.V3.value},
+            {"from": MembershipLevel.V3.value, "to": MembershipLevel.V4.value},
+            {"from": MembershipLevel.V4.value, "to": MembershipLevel.V5.value}
         ]
         return paths
     
@@ -449,32 +438,44 @@ class LimitsService:
         
         # 如果订阅或推送达到限制，建议升级
         if subscription_info["limit_reached"] or push_info["limit_reached"]:
-            if current_level == MembershipLevel.FREE:
+            # 建议升级到下一等级（若有）
+            order = [
+                MembershipLevel.FREE,
+                MembershipLevel.V1,
+                MembershipLevel.V2,
+                MembershipLevel.V3,
+                MembershipLevel.V4,
+                MembershipLevel.V5
+            ]
+            idx = order.index(current_level)
+            if idx < len(order) - 1:
+                target = order[idx + 1]
                 suggestions.append({
                     "type": "upgrade",
-                    "target_level": MembershipLevel.BASIC.value,
-                    "reason": "当前限制已达上限",
-                    "benefits": ["订阅数量增加到50个", "每日推送增加到20次"]
-                })
-            elif current_level == MembershipLevel.BASIC:
-                suggestions.append({
-                    "type": "upgrade",
-                    "target_level": MembershipLevel.PREMIUM.value,
-                    "reason": "当前限制已达上限",
-                    "benefits": ["无限订阅和推送"]
+                    "target_level": target.value,
+                    "reason": "当前限制已达上限"
                 })
         
         # 如果使用量较高，建议升级
         if (subscription_info["subscription_used"] / max(subscription_info["subscription_limit"], 1) > 0.8 or
             push_info["daily_push_used"] / max(push_info["daily_push_limit"], 1) > 0.8):
-            if current_level == MembershipLevel.FREE:
+            order = [
+                MembershipLevel.FREE,
+                MembershipLevel.V1,
+                MembershipLevel.V2,
+                MembershipLevel.V3,
+                MembershipLevel.V4,
+                MembershipLevel.V5
+            ]
+            idx = order.index(current_level)
+            if idx < len(order) - 1:
+                target = order[idx + 1]
                 suggestions.append({
                     "type": "recommendation",
-                    "target_level": MembershipLevel.BASIC.value,
-                    "reason": "使用量较高，建议升级获得更多配额",
-                    "benefits": ["避免达到使用限制", "享受更多功能"]
+                    "target_level": target.value,
+                    "reason": "使用量较高，建议升级获得更多配额"
                 })
-        
+         
         return suggestions
     
     def _get_next_reset_time(self) -> datetime:

@@ -619,6 +619,75 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
+     * 检查认证状态和令牌（用于调试）
+     */
+    async diagnoseAuthState() {
+      try {
+        // 加载令牌信息
+        const tokenData = tokenManager.loadTokens()
+        
+        // 获取用户信息
+        const userStore = useUserStore()
+        
+        console.log('========= 认证状态诊断 =========')
+        console.log('认证状态:')
+        console.log('- isLoggedIn:', this.isLoggedIn)
+        console.log('- 令牌存在:', !!this.token)
+        console.log('- 刷新令牌存在:', !!this.refreshToken)
+        console.log('- 令牌过期时间:', this.tokenExpireAt)
+        console.log('- 令牌是否过期:', tokenManager.isTokenExpired())
+        
+        console.log('\n本地存储令牌状态:')
+        console.log('- 令牌存在:', !!tokenData?.token)
+        console.log('- 刷新令牌存在:', !!tokenData?.refreshToken)
+        console.log('- 令牌过期时间:', tokenData?.tokenExpireAt)
+        
+        console.log('\n用户信息:')
+        console.log('- 用户ID:', userStore.userInfo.id)
+        console.log('- 用户名:', userStore.userInfo.nickname)
+        console.log('- 会员级别:', userStore.userInfo.membership_level)
+        
+        console.log('\n登录状态信息:')
+        const loginState = tokenManager.getLoginState()
+        console.log('- 登录状态:', loginState ? JSON.stringify({
+          isLoggedIn: loginState.isLoggedIn,
+          loginTime: loginState.loginTime,
+          lastActiveTime: loginState.lastActiveTime,
+          autoLoginEnabled: loginState.autoLoginEnabled
+        }) : 'null')
+        
+        // 验证令牌
+        let tokenValid = false
+        try {
+          tokenValid = await this.verifyToken()
+        } catch (e) {
+          console.log('令牌验证出错:', e.message)
+        }
+        console.log('- 令牌验证结果:', tokenValid)
+        
+        console.log('===============================')
+        
+        return {
+          authState: {
+            isLoggedIn: this.isLoggedIn,
+            hasToken: !!this.token,
+            tokenExpired: tokenManager.isTokenExpired(),
+            tokenValid
+          },
+          userState: {
+            hasUserId: !!userStore.userInfo.id,
+            userId: userStore.userInfo.id,
+            nickname: userStore.userInfo.nickname
+          }
+        }
+        
+      } catch (error) {
+        console.error('诊断认证状态失败:', error)
+        return { error: error.message }
+      }
+    },
+
+    /**
      * 处理登录成功后的逻辑
      */
     handleLoginSuccess() {

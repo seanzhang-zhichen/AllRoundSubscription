@@ -2,10 +2,13 @@
 微信公众号平台适配器
 """
 from datetime import datetime
+from re import A
 from typing import List, Optional, Dict, Any
 from app.services.search.base import PlatformAdapter, PlatformSearchResult
 from app.models.account import Platform
 from app.services.search.adapters.wechat_api import WeChatRSSAPI
+from app.services.search.adapters.wechat_db import WechatMySQLDB
+
 from app.core.logging import get_logger
 from app.schemas.account import AccountResponse
 from app.schemas.article import ArticleResponse
@@ -19,6 +22,7 @@ class WeChatAdapter(PlatformAdapter):
     def __init__(self):
         super().__init__(Platform.WECHAT)
         self.wechat_api = WeChatRSSAPI()
+        self.wechat_db = WechatMySQLDB()
 
     @property
     def platform_name(self) -> str:
@@ -34,7 +38,7 @@ class WeChatAdapter(PlatformAdapter):
         self, 
         keyword: str, 
         page: int = 1, 
-        page_size: int = 20
+        page_size: int = 10
     ) -> PlatformSearchResult:
         """
         搜索微信公众号
@@ -52,10 +56,28 @@ class WeChatAdapter(PlatformAdapter):
         
         if search_ret["success"]:
             accounts = search_ret["data"]["list"]
+            account_response_list = []
+            for account in accounts:
+                print(f"account: {account}")
+                account_response = AccountResponse(
+                    id=account["fakeid"],
+                    platform=self.platform.value,
+                    account_id=account["fakeid"],
+                    avatar_url=account["round_head_img"],
+                    description=account["signature"],
+                    name=account["nickname"],
+                    platform_display_name=self.platform_name,
+                    follower_count=0,
+                    details={},
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                account_response_list.append(account_response)
+
             total = search_ret["data"]["total"]
             result = PlatformSearchResult(
                 platform=self.platform.value,
-                accounts=accounts,
+                accounts=account_response_list,
                 total=total,
                 success=True,
                 error_message=None
@@ -81,7 +103,7 @@ class WeChatAdapter(PlatformAdapter):
         Returns:
             Optional[Dict[str, Any]]: 公众号信息，如果不存在返回None
         """
-        account_info = self.wechat_api.get_account_info(account_id)
+        account_info = self.wechat_db.get_account_info(account_id)
 
         if account_info["success"]:
             account_response = AccountResponse(
@@ -105,9 +127,9 @@ class WeChatAdapter(PlatformAdapter):
 
     async def get_all_accounts(self) -> List[Dict[str, Any]]:
         """
-        获取所有微信公众号
+        获取所有已收录的微信公众号
         """
-        ret = self.wechat_api.get_all_accounts()
+        ret = self.wechat_db.get_all_accounts()
         result = []
         if ret["success"]:
             for account in ret["data"]:
@@ -134,11 +156,10 @@ class WeChatAdapter(PlatformAdapter):
 
     async def get_all_articles_by_account_id(self, account_id: str):
         result = []
-        ret = self.wechat_api.get_all_articles(account_id)
+        ret = self.wechat_db.get_all_articles(account_id)
         logger.info(f"""获取所有微信公众号文章返回： {ret['success']}""")
         if ret["success"]:
             for article in ret["data"]:
-                logger.info(f"""组装返回结果： {article['title'][:100]}""")
                 article_response = ArticleResponse(
                     id=article["id"],
                     account_id=article["mp_id"],
@@ -146,12 +167,12 @@ class WeChatAdapter(PlatformAdapter):
                     url=article["url"],
                     content=article["content"],
                     summary=article.get("summary", ""),
-                    publish_time=datetime.fromtimestamp(article["publish_time"]),
+                    publish_time=article["publish_time"],
                     publish_timestamp=article["publish_time"],
                     images=[article["pic_url"]] if article["pic_url"] else [],
                     details={},
-                    created_at=datetime.fromisoformat(article["created_at"]),
-                    updated_at=datetime.fromisoformat(article["updated_at"]),
+                    created_at=article["created_at"],
+                    updated_at=article["updated_at"],
                     image_count=1,
                     has_images=True,
                     thumbnail_url=article["pic_url"]
@@ -169,7 +190,7 @@ class WeChatAdapter(PlatformAdapter):
         """
         获取微信公众号文章详情
         """
-        article = self.wechat_api.get_article_detail(article_id)
+        article = self.wechat_db.get_article_detail(article_id)
         if article["success"]:
             article_response = ArticleResponse(
                 id=article["data"]["id"],
@@ -178,12 +199,12 @@ class WeChatAdapter(PlatformAdapter):
                 url=article["data"]["url"],
                 content=article["data"]["content"],
                 summary=article.get("summary", ""),
-                publish_time=datetime.fromtimestamp(article["data"]["publish_time"]),
+                publish_time=article["data"]["publish_time"],
                 publish_timestamp=article["data"]["publish_time"],
                 images=[article["data"]["pic_url"]] if article["data"]["pic_url"] else [],
                 details={},
-                created_at=datetime.fromisoformat(article["data"]["created_at"]),
-                updated_at=datetime.fromisoformat(article["data"]["updated_at"]),
+                created_at=article["data"]["created_at"],
+                updated_at=article["data"]["updated_at"],
                 image_count=1,
                 has_images=True,
                 thumbnail_url=article["data"]["pic_url"]
@@ -196,7 +217,46 @@ class WeChatAdapter(PlatformAdapter):
         """
         获取微信公众号账号文章统计信息
         """
-        ret = self.wechat_api.get_account_article_stats(account_id)
+        ret = self.wechat_db.get_account_article_stats(account_id)
+        if ret["success"]:
+            return ret["data"]
+        else:
+            return None
+
+    async def add_account(self, mp_name: str, mp_cover: Optional[str] = None, mp_id: Optional[str] = None, 
+                   avatar: Optional[str] = None, mp_intro: Optional[str] = None) -> Optional[AccountResponse]:
+        """
+        添加微信公众号账号
+        """
+        ret = self.wechat_api.add_account(mp_name=mp_name, mp_id=mp_id, avatar=avatar, mp_intro=mp_intro)
+        print("====="*10)
+        print(f"添加账号: {ret}")
+        print("====="*10)
+        if ret["success"]:
+            account_info = ret["data"]
+            account_response = AccountResponse(
+                id=account_info["id"],
+                platform=self.platform.value,
+                account_id=account_info["id"],
+                avatar_url=account_info["mp_cover"],
+                description=account_info["mp_intro"],
+                name=account_info["mp_name"],
+                platform_display_name=self.platform_name,
+                follower_count=0,
+                details={},
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            return account_response
+        else:
+            return None
+
+
+    async def get_id_by_faker_id(self, faker_id: str):
+        """
+        根据faker_id查询账号的id
+        """
+        ret = self.wechat_db.get_id_by_faker_id(faker_id)
         if ret["success"]:
             return ret["data"]
         else:

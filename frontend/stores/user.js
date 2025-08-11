@@ -44,6 +44,12 @@ export const useUserStore = defineStore('user', {
     membershipLevelName: (state) => {
       const levelMap = {
         'free': '免费用户',
+        'v1': 'V1 会员',
+        'v2': 'V2 会员',
+        'v3': 'V3 会员',
+        'v4': 'V4 会员',
+        'v5': 'V5 会员',
+        // 兼容旧值
         'basic': '基础会员',
         'premium': '高级会员'
       }
@@ -138,30 +144,61 @@ export const useUserStore = defineStore('user', {
     },
     
     /**
-     * 升级会员
+     * 升级会员（通过支付）
      */
-    async upgradeMembership(level) {
+    async upgradeMembership(level, durationMonths = 1) {
       try {
         this.loading = true
-        const data = await request.post('/users/membership', { level })
-        this.userInfo.membership_level = data.level
-        this.userInfo.membership_expire_at = data.expire_at
+        // 创建支付订单
+        const payload = {
+          level,
+          duration_months: durationMonths,
+          channel: 'wechat_miniprog'  // 默认使用小程序支付
+        }
+        const resp = await request.post('/payments/create', payload)
+        const { pay_params: payParams, channel } = resp
+
+        // 调起支付
+        if (channel === 'wechat_miniprog' || channel === 'wechat_jsapi') {
+          // 小程序支付
+          await new Promise((resolve, reject) => {
+            // #ifdef MP-WEIXIN
+            wx.requestPayment({
+              timeStamp: payParams.timeStamp,
+              nonceStr: payParams.nonceStr,
+              package: payParams.package,
+              signType: payParams.signType || 'RSA',
+              paySign: payParams.paySign,
+              success: resolve,
+              fail: reject
+            })
+            // #endif
+            // #ifndef MP-WEIXIN
+            reject(new Error('当前环境不支持小程序支付'))
+            // #endif
+          })
+        } else if (channel === 'wechat_h5' && payParams.h5_url) {
+          // H5跳转
+          // #ifdef H5
+          window.location.href = payParams.h5_url
+          // #endif
+          // #ifndef H5
+          uni.navigateTo({ url: `/pages/webview/webview?url=${encodeURIComponent(payParams.h5_url)}` })
+          // #endif
+          // 避免未完成支付时误提示成功，这里直接返回，等待支付完成后的回调/页面再校验订单状态
+          uni.showToast({ title: '已跳转至微信支付，请完成支付后返回', icon: 'none' })
+          return false
+        }
         
-        // 更新用户限制
+        // 支付成功，刷新用户信息与限制
+        await this.fetchUserProfile()
         await this.fetchUserLimits()
-        
-        uni.showToast({
-          title: '会员升级成功',
-          icon: 'success'
-        })
-        
-        return data
+
+        uni.showToast({ title: '支付成功，会员已升级', icon: 'success' })
+        return true
       } catch (error) {
         console.error('会员升级失败:', error)
-        uni.showToast({
-          title: '升级失败，请稍后重试',
-          icon: 'none'
-        })
+        uni.showToast({ title: '支付失败或取消', icon: 'none' })
         throw error
       } finally {
         this.loading = false

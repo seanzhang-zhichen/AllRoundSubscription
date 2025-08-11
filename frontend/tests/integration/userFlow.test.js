@@ -263,11 +263,14 @@ describe('用户交互流程集成测试', () => {
       mockRequest.get.mockImplementation((url) => {
         if (url === '/search/accounts') {
           return Promise.resolve({
-            items: [
+            accounts: [  // 修改字段名与实际API一致
               { id: 1, name: '测试博主1', is_subscribed: false },
               { id: 2, name: '测试博主2', is_subscribed: false }
             ],
-            total: 2
+            total: 2,
+            page: 0,  // 页码从0开始
+            page_size: 20,
+            has_more: false
           })
         }
         return Promise.resolve({})

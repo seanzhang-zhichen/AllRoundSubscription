@@ -48,11 +48,14 @@ class PermissionChecker:
             # 获取有效等级
             effective_level = MembershipLevel(membership_info["effective_level"])
             
-            # 等级优先级：FREE < BASIC < PREMIUM
+            # 等级优先级：FREE < V1 < V2 < V3 < V4 < V5（兼容BASIC≈V2，PREMIUM≈V5）
             level_priority = {
                 MembershipLevel.FREE: 0,
-                MembershipLevel.BASIC: 1,
-                MembershipLevel.PREMIUM: 2
+                MembershipLevel.V1: 1,
+                MembershipLevel.V2: 2,
+                MembershipLevel.V3: 3,
+                MembershipLevel.V4: 4,
+                MembershipLevel.V5: 5,
             }
             
             user_priority = level_priority.get(effective_level, 0)

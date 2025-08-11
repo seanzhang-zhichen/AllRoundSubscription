@@ -7,6 +7,7 @@ from app.models.account import Account, Platform
 from app.models.article import Article
 from app.models.subscription import Subscription
 from app.models.push_record import PushRecord, PushStatus
+from app.models.payment_order import PaymentOrder, PaymentStatus, PaymentChannel
 
 __all__ = [
     "BaseModel",
@@ -14,5 +15,6 @@ __all__ = [
     "Account", "Platform", 
     "Article",
     "Subscription",
-    "PushRecord", "PushStatus"
+    "PushRecord", "PushStatus",
+    "PaymentOrder", "PaymentStatus", "PaymentChannel"
 ]

@@ -87,11 +87,12 @@
           </view>
         </view>
 
-        <!-- 加载更多 -->
-        <view v-if="hasMore" class="load-more">
-          <button class="btn btn-outline btn-sm" @click="loadMore" :disabled="loading">
-            <text class="btn-text">{{ loading ? '加载中...' : '加载更多' }}</text>
-          </button>
+        <!-- 底部加载状态 -->
+        <view v-if="hasMore || loading" class="loading-more">
+          <view class="loading-indicator">
+            <view v-if="loading" class="loading-spinner"></view>
+            <text class="loading-text">{{ loading ? '加载中...' : '下滑加载更多' }}</text>
+          </view>
         </view>
       </view>
 
@@ -120,10 +121,10 @@
             </view>
           </view>
 
-          <view class="membership-option premium" @click="upgradeMembership('premium')">
+          <view class="membership-option premium" @click="upgradeMembership('v5')">
             <view class="option-header">
-              <text class="option-title">高级会员</text>
-              <text class="option-price">¥19.9/月</text>
+              <text class="option-title">V5 会员</text>
+              <text class="option-price">¥29.9/月</text>
             </view>
             <view class="option-benefits">
               <text class="benefit-item">• 订阅数量：无限制</text>
@@ -139,7 +140,7 @@
 
 <script>
 import { ref, computed, onMounted, onActivated } from 'vue'
-import { onPullDownRefresh, onShow, onLoad } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onShow, onLoad, onReachBottom } from '@dcloudio/uni-app'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useUserStore } from '@/stores/user'
 import { useAuthStore } from '@/stores/auth'
@@ -177,6 +178,13 @@ export default {
       if (!this.loading && this.loadInitialData) {
         this.loadInitialData()
       }
+    }
+  },
+  // 滚动触底事件处理函数
+  onReachBottom() {
+    console.log('====== 订阅页面触底(onReachBottom) ======')
+    if (this.loadMore) {
+      this.loadMore()
     }
   },
   setup() {
@@ -391,15 +399,23 @@ export default {
         return
       }
       
-      try {
-        console.log('开始执行加载更多')
-        await loadSubscriptions(false)
-        console.log('加载更多完成')
-      } catch (error) {
-        console.error('加载更多失败:', error)
-      } finally {
-        console.log('===== 加载更多操作结束 =====')
+      // 添加简单的防抖处理，避免频繁触发
+      if (loadMore.timer) {
+        clearTimeout(loadMore.timer)
       }
+      
+      loadMore.timer = setTimeout(async () => {
+        try {
+          console.log('开始执行加载更多')
+          await loadSubscriptions(false)
+          console.log('加载更多完成')
+        } catch (error) {
+          console.error('加载更多失败:', error)
+        } finally {
+          console.log('===== 加载更多操作结束 =====')
+          loadMore.timer = null
+        }
+      }, 300) // 300ms防抖延迟
     }
 
     // 处理取消订阅
@@ -436,8 +452,10 @@ export default {
       if (batchMode.value) {
         toggleSelection(subscription.id)
       } else {
-        // 可以跳转到博主详情页面
-        console.log('查看博主详情:', subscription.account.name)
+        // 跳转到博主详情页面
+        uni.navigateTo({
+          url: `/pages/account/detail?id=${subscription.account.id}&platform=${subscription.account.platform}`
+        })
       }
     }
 
@@ -483,7 +501,7 @@ export default {
     // 升级会员
     const upgradeMembership = async (level) => {
       try {
-        await userStore.upgradeMembership(level)
+        await userStore.upgradeMembership(level, 1)
         hideUpgradeModal()
         // 刷新页面数据
         await loadSubscriptions(true)
@@ -506,6 +524,7 @@ export default {
 
     // 注册生命周期钩子
     onPullDownRefresh(lifecycle.onPullDownRefresh)
+    onReachBottom(loadMore) // 注册滚动触底事件
 
     return {
       // 状态
@@ -815,6 +834,41 @@ export default {
   display: flex;
   justify-content: center;
   margin-top: 30rpx;
+}
+
+/* 底部加载状态样式 */
+.loading-more {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20rpx 0;
+  background-color: #f5f5f5;
+  border-top: 1px solid #eee;
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.loading-text {
+  font-size: 28rpx;
+  color: #999;
+}
+
+.loading-spinner {
+  width: 40rpx;
+  height: 40rpx;
+  border: 4rpx solid #f3f3f3;
+  border-top: 4rpx solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* 会员升级弹窗样式 */

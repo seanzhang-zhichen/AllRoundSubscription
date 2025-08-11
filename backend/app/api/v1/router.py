@@ -8,6 +8,7 @@ from app.api.v1.membership import router as membership_router
 from app.api.v1.subscriptions import router as subscription_router
 from app.api.v1.content import router as content_router
 from app.api.v1.content_detection import router as content_detection_router
+from app.api.v1.payments import router as payments_router
 
 # 创建主路由
 api_router = APIRouter()
@@ -30,6 +31,9 @@ api_router.include_router(user_router, prefix="/users", tags=["用户"])
 
 # 注册会员路由
 api_router.include_router(membership_router, prefix="/membership", tags=["会员"])
+
+# 注册支付路由（已在子路由内声明prefix）
+api_router.include_router(payments_router)
 
 # 注册订阅路由
 api_router.include_router(subscription_router, prefix="/subscriptions", tags=["订阅"])

@@ -84,7 +84,10 @@ class ContentService:
             articles = []
             for account_id, platform in subscribed_accounts:
                 account_articles = await search_service.get_articles_by_account(db=db, platform=platform, account_id=account_id, page=page, page_size=page_size)                
-                articles.extend(account_articles)
+                if account_articles:
+                    articles.extend(account_articles)
+                else:
+                    logger.error(f"获取账号 {account_id} 的文章列表失败")
             
             # 根据文章发布时间降序排序
 

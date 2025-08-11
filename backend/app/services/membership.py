@@ -33,17 +33,32 @@ class MembershipConfig:
             "daily_push_limit": 5,
             "features": ["basic_aggregation"]
         },
-        MembershipLevel.BASIC: {
+        MembershipLevel.V1: {
+            "subscription_limit": 20,
+            "daily_push_limit": 10,
+            "features": ["basic_aggregation"]
+        },
+        MembershipLevel.V2: {
             "subscription_limit": 50,
             "daily_push_limit": 20,
             "features": ["basic_aggregation", "advanced_search", "priority_support"]
         },
-        MembershipLevel.PREMIUM: {
-            "subscription_limit": -1,  # 无限制
-            "daily_push_limit": -1,    # 无限制
+        MembershipLevel.V3: {
+            "subscription_limit": 100,
+            "daily_push_limit": 50,
+            "features": ["basic_aggregation", "advanced_search", "priority_support"]
+        },
+        MembershipLevel.V4: {
+            "subscription_limit": 300,
+            "daily_push_limit": 200,
+            "features": ["basic_aggregation", "advanced_search", "priority_support", "data_export"]
+        },
+        MembershipLevel.V5: {
+            "subscription_limit": -1,
+            "daily_push_limit": -1,
             "features": [
-                "basic_aggregation", 
-                "advanced_search", 
+                "basic_aggregation",
+                "advanced_search",
                 "priority_support",
                 "exclusive_features",
                 "data_export"
@@ -58,14 +73,34 @@ class MembershipConfig:
             "每日5次推送通知",
             "基础内容聚合"
         ],
-        MembershipLevel.BASIC: [
+        MembershipLevel.V1: [
+            "订阅20个博主",
+            "每日10次推送通知",
+            "基础内容聚合"
+        ],
+        MembershipLevel.V2: [
             "订阅50个博主",
             "每日20次推送通知",
             "高级内容聚合",
             "高级搜索功能",
             "优先客服支持"
         ],
-        MembershipLevel.PREMIUM: [
+        MembershipLevel.V3: [
+            "订阅100个博主",
+            "每日50次推送通知",
+            "高级内容聚合",
+            "高级搜索功能",
+            "优先客服支持"
+        ],
+        MembershipLevel.V4: [
+            "订阅300个博主",
+            "每日200次推送通知",
+            "高级内容聚合",
+            "高级搜索功能",
+            "优先客服支持",
+            "数据导出功能"
+        ],
+        MembershipLevel.V5: [
             "无限订阅博主",
             "无限推送通知",
             "高级内容聚合",

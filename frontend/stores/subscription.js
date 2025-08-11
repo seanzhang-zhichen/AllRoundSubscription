@@ -229,14 +229,26 @@ export const useSubscriptionStore = defineStore('subscription', {
         }
         
         // 更新分页信息
+        console.log('响应中的分页信息:', { 
+          total: response.total || 0,
+          total_pages: response.total_pages || 0,
+          page_size: response.page_size || this.pagination.size
+        })
+
         this.pagination.total = response.total || 0
-        this.pagination.hasMore = data.length === this.pagination.size
+
+        // 修复hasMore计算逻辑，优先使用API返回的total_pages，否则自行计算
+        const totalPages = response.total_pages || Math.ceil(this.pagination.total / this.pagination.size) || 0
+        this.pagination.hasMore = this.pagination.page < totalPages
+
+        // 更新下一页页码
         this.pagination.page += 1
-        
+
         console.log('更新分页信息:', { 
           total: this.pagination.total, 
           hasMore: this.pagination.hasMore,
-          nextPage: this.pagination.page
+          nextPage: this.pagination.page,
+          totalPages: totalPages
         })
         
         // 检查并尝试修复分组问题
@@ -258,10 +270,63 @@ export const useSubscriptionStore = defineStore('subscription', {
     },
     
     /**
+     * 检查订阅状态
+     * @param {string} accountId - 账号ID
+     * @param {string} platform - 平台类型
+     * @param {string} source - 订阅来源，如'search'或'included'
+     */
+    async checkSubscriptionStatus(accountId, platform, source = 'included') {
+      console.log('检查订阅状态, accountId:', accountId, 'platform:', platform, 'source:', source)
+      try {
+        // 检查必要参数
+        if (!platform) {
+          console.error('检查订阅状态失败: 平台参数不能为空')
+          throw new Error('平台参数不能为空')
+        }
+        
+        if (!source) {
+          console.error('检查订阅状态失败: 来源参数不能为空')
+          throw new Error('来源参数不能为空')
+        }
+        
+        // 移除过渡动画，不修改loading状态
+        
+        // 获取当前用户信息
+        const userStore = useUserStore()
+        
+        // 详细日志
+        console.log('===订阅状态检查请求详细日志===')
+        console.log('用户信息详情:', {
+          id: userStore.userInfo.id,
+          nickname: userStore.userInfo.nickname,
+          isLoggedIn: !!userStore.userInfo.id
+        })
+        
+        if (!userStore.userInfo.id) {
+          console.error('检查订阅状态失败: 用户未登录')
+          throw new Error('用户未登录')
+        }
+        
+        const response = await request.get(`/subscriptions/status/${accountId}`, {
+          platform: platform,
+          source: source
+        })
+        
+        console.log('订阅状态检查响应:', response)
+        
+        return response
+      } catch (error) {
+        console.error('检查订阅状态失败:', error)
+        throw error
+      }
+    },
+    
+    /**
      * 订阅博主
      */
-    async subscribeAccount(accountId, platform) {
-      console.log('开始订阅博主, accountId:', accountId, 'platform:', platform)
+    async subscribeAccount(account, source) {
+      const { id: accountId, platform, name, avatar_url, description } = account;
+      console.log('开始订阅博主, accountId:', accountId, 'platform:', platform, 'source:', source)
       try {
         // 检查必要参数
         if (!platform) {
@@ -276,17 +341,48 @@ export const useSubscriptionStore = defineStore('subscription', {
         // 获取当前用户ID
         const userStore = useUserStore()
         
+        // 详细日志
+        console.log('===订阅请求详细日志===')
+        console.log('用户信息详情:', {
+          id: userStore.userInfo.id,
+          nickname: userStore.userInfo.nickname,
+          isLoggedIn: !!userStore.userInfo.id
+        })
+        console.log('订阅请求参数:', {
+          accountId,
+          platform,
+          userIdExists: !!userStore.userInfo.id
+        })
+        
+        // 检查token
+        const token = uni.getStorageSync('token')
+        console.log('认证令牌状态:', {
+          hasToken: !!token,
+          tokenLength: token ? token.length : 0
+        })
+        console.log('=====================')
+        
         if (!userStore.userInfo.id) {
           console.error('订阅失败: 用户未登录')
           throw new Error('用户未登录')
         }
         
         console.log('发送订阅请求, 用户ID:', userStore.userInfo.id)
-        const response = await request.post('/subscriptions', {
+        
+        const payload = {
           user_id: userStore.userInfo.id,
           account_id: accountId,
-          platform: platform
-        })
+          platform: platform,
+          source: source
+        };
+
+        if (source === 'search') {
+          payload.mp_name = name;
+          payload.avatar = avatar_url;
+          payload.mp_intro = description;
+        }
+
+        const response = await request.post('/subscriptions', payload)
         
         console.log('订阅成功, 响应数据:', response)
         
@@ -388,8 +484,11 @@ export const useSubscriptionStore = defineStore('subscription', {
           platform = 'unknown'
         }
         
-        console.log('使用account_id调用取消订阅API, accountId:', accountId, 'platform:', platform)
-        await request.delete(`/subscriptions/${accountId}?platform=${platform}`)
+        // 获取订阅来源信息，默认为'included'
+        const source = subscription.source || 'included'
+        
+        console.log('使用account_id调用取消订阅API, accountId:', accountId, 'platform:', platform, 'source:', source)
+        await request.delete(`/subscriptions/${accountId}?platform=${platform}&source=${source}`)
         console.log('取消订阅请求成功')
         
         // 从订阅列表中移除
@@ -423,8 +522,8 @@ export const useSubscriptionStore = defineStore('subscription', {
     /**
      * 通过账号ID取消订阅
      */
-    async unsubscribeByAccountId(accountId, platform) {
-      console.log('通过账号ID取消订阅, accountId:', accountId, 'platform:', platform)
+    async unsubscribeByAccountId(accountId, platform, source = 'included') {
+      console.log('通过账号ID取消订阅, accountId:', accountId, 'platform:', platform, 'source:', source)
       try {
         // 将账号ID添加到加载中列表
         this.loadingAccountIds.push(accountId)
@@ -443,14 +542,21 @@ export const useSubscriptionStore = defineStore('subscription', {
                       (subscription.account && subscription.account.platform) ||
                       'unknown'
             console.log('从订阅列表中获取到平台信息:', platform)
+            
+            // 如果找到了订阅记录，尝试获取source
+            if (!source || source === 'included') {
+              source = subscription.source || 'included'
+              console.log('从订阅列表中获取到来源信息:', source)
+            }
           } else {
-            console.warn('未找到该账号的订阅信息，使用默认平台"unknown"')
+            console.warn('未找到该账号的订阅信息，使用默认平台"unknown"和来源"included"')
             platform = 'unknown'
+            source = 'included'
           }
         }
         
-        // 添加platform参数到URL查询字符串
-        await request.delete(`/subscriptions/${accountId}?platform=${platform}`)
+        // 添加platform和source参数到URL查询字符串
+        await request.delete(`/subscriptions/${accountId}?platform=${platform}&source=${source}`)
         console.log('通过账号ID取消订阅请求成功')
         
         // 从订阅列表中移除
@@ -493,6 +599,56 @@ export const useSubscriptionStore = defineStore('subscription', {
       }
     },
     
+    /**
+     * 测试模拟订阅（调试用，忽略用户ID检查）
+     */
+    async testSubscribeAccount(accountId, platform) {
+      console.log('=== 测试模拟订阅 ===')
+      console.log('账号ID:', accountId)
+      console.log('平台:', platform)
+      
+      try {
+        // 将账号ID添加到加载中列表
+        this.loadingAccountIds.push(accountId)
+        this.loading = true
+        
+        // 获取当前用户信息，但不做ID校验
+        const userStore = useUserStore()
+        console.log('用户信息:', JSON.stringify(userStore.userInfo))
+        
+        // 获取认证令牌
+        const token = uni.getStorageSync('token')
+        console.log('令牌状态:', !!token)
+        
+        // 直接构建请求参数，不校验用户ID
+        const requestParams = {
+          user_id: userStore.userInfo.id || 0, // 使用0表示未知用户ID
+          account_id: accountId,
+          platform: platform
+        }
+        
+        console.log('发送订阅请求参数:', requestParams)
+        const response = await request.post('/subscriptions', requestParams)
+        
+        console.log('订阅响应结果:', response)
+        return response
+        
+      } catch (error) {
+        console.error('模拟订阅测试失败:', error)
+        throw error
+      } finally {
+        // 从加载中列表移除该账号ID
+        const index = this.loadingAccountIds.indexOf(accountId)
+        if (index > -1) {
+          this.loadingAccountIds.splice(index, 1)
+        }
+        // 如果没有正在加载的账号，设置全局loading为false
+        if (this.loadingAccountIds.length === 0) {
+          this.loading = false
+        }
+      }
+    },
+
     /**
      * 检查是否已订阅某个博主
      */
@@ -568,8 +724,12 @@ export const useSubscriptionStore = defineStore('subscription', {
             console.warn('无法获取账号ID，跳过此订阅')
             return Promise.resolve() // 跳过无效ID
           }
-          console.log(`取消订阅: accountId=${accountId}, platform=${platform}`)
-          return request.delete(`/subscriptions/${accountId}?platform=${platform}`)
+          
+          // 获取来源信息，默认为included
+          const source = sub.source || 'included'
+          
+          console.log(`取消订阅: accountId=${accountId}, platform=${platform}, source=${source}`)
+          return request.delete(`/subscriptions/${accountId}?platform=${platform}&source=${source}`)
         }).filter(p => p) // 过滤掉undefined的Promise
         
         await Promise.all(promises)

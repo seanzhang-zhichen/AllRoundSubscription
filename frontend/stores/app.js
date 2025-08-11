@@ -36,28 +36,10 @@ export const useAppStore = defineStore('app', {
     // 支持的平台列表
     supportedPlatforms: [
       {
-        key: 'weixin',
+        key: 'wechat',
         name: '微信公众号',
         icon: '/static/platform-wechat.png',
         color: '#07c160'
-      },
-      {
-        key: 'weibo',
-        name: '微博',
-        icon: '/static/platform-weibo.png',
-        color: '#ff8200'
-      },
-      {
-        key: 'twitter',
-        name: 'Twitter',
-        icon: '/static/platform-twitter.png',
-        color: '#1da1f2'
-      },
-      {
-        key: 'zhihu',
-        name: '知乎',
-        icon: '/static/platform-zhihu.png',
-        color: '#0084ff'
       }
     ]
   }),

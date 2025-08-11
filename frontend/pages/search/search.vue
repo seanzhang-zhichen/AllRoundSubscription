@@ -63,7 +63,7 @@
 
         <view class="results-list">
           <view v-for="account in searchStore.searchResults" :key="account.id" class="account-item"
-            @click="viewAccountDetail(account)">
+            @click="!searchStore.currentKeyword && viewAccountDetail(account)">
             <view class="account-avatar">
               <image :src="account.avatar_url" mode="aspectFill" class="avatar-img" />
               <view class="platform-badge" :style="{ backgroundColor: getPlatformColor(account.platform) }">
@@ -102,6 +102,8 @@
       <Empty v-if="searchStore.currentKeyword && !searchStore.hasResults && !searchStore.isSearching" icon="search"
         text="未找到相关博主" :show-action="true" action-text="换个关键词试试" @action="clearSearch" />
 
+      <!-- 删除调试面板 -->
+
       <!-- 默认状态 -->
       <view v-if="!searchStore.currentKeyword && !searchStore.hasResults && appStore.searchHistory.length === 0"
         class="default-state">
@@ -123,6 +125,8 @@ import { createPageState } from '@/utils/pageState'
 import { checkLoginAndNavigate } from '@/utils/navigation'
 import { useSearchStore, useAppStore, useSubscriptionStore, useAuthStore } from '@/stores'
 import { onShow } from '@dcloudio/uni-app'
+import { useUserStore } from '@/stores/user'
+import tokenManager from '@/utils/tokenManager'
 
 export default {
   name: 'SearchPage',
@@ -155,16 +159,44 @@ export default {
     // 添加计算属性来缓存订阅状态，避免重复检查
     const subscribedAccountIds = ref({});
 
-    // 初始化页面时只检查一次所有博主的订阅状态
-    const initSubscriptionStatus = () => {
+    // 初始化页面时检查所有博主的订阅状态，使用API获取最新状态
+    const initSubscriptionStatus = async () => {
       if (searchStore.searchResults && searchStore.searchResults.length > 0) {
         const ids = {};
+        // 先使用本地方法快速初始化UI状态
         searchStore.searchResults.forEach(account => {
           if (account && account.id) {
             ids[account.id] = subscriptionStore.isSubscribed(account.id);
           }
         });
+        // 立即更新UI状态
         subscribedAccountIds.value = ids;
+        
+        // 然后通过API逐个获取真实状态（如果用户已登录）
+        if (isLoggedIn.value) {
+          console.log('开始通过API检查所有账号的订阅状态');
+          const source = searchStore.currentKeyword ? 'search' : 'included';
+          
+          for (const account of searchStore.searchResults) {
+            if (account && account.id) {
+              try {
+                const statusResponse = await subscriptionStore.checkSubscriptionStatus(
+                  account.id,
+                  account.platform,
+                  source
+                );
+                // 更新状态缓存
+                if (statusResponse && typeof statusResponse.is_subscribed === 'boolean') {
+                  updateSubscriptionCache(account.id, statusResponse.is_subscribed);
+                  console.log(`账号 ${account.id} 订阅状态: ${statusResponse.is_subscribed}`);
+                }
+              } catch (error) {
+                console.error(`检查账号 ${account.id} 订阅状态失败:`, error);
+              }
+            }
+          }
+          console.log('所有账号订阅状态检查完成');
+        }
       }
     };
 
@@ -201,8 +233,8 @@ export default {
           await searchStore.searchAccounts('', [], true)
         }
         
-        // 初始化订阅状态缓存
-        initSubscriptionStatus();
+        // 初始化订阅状态缓存（异步）
+        await initSubscriptionStatus();
 
         console.log('搜索页面初始化完成')
       } catch (error) {
@@ -219,8 +251,8 @@ export default {
           await subscriptionStore.fetchSubscriptions(true)
         }
         
-        // 刷新所有博主的订阅状态
-        initSubscriptionStatus();
+        // 刷新所有博主的订阅状态（异步）
+        await initSubscriptionStatus();
       } catch (error) {
         console.error('刷新订阅状态失败:', error)
       }
@@ -257,6 +289,11 @@ export default {
         return
       }
 
+      console.log('===== 开始搜索博主 =====')
+      console.log('搜索关键词:', searchKeyword.value)
+      console.log('选择的平台:', selectedPlatforms.value)
+      console.log('======================')
+      
       await pageState.executeAsync(async () => {
         await searchStore.searchAccounts(
           searchKeyword.value,
@@ -264,8 +301,15 @@ export default {
           true // 刷新搜索
         )
         
-        // 搜索完成后更新订阅状态缓存
-        initSubscriptionStatus();
+        // 搜索完成后记录结果
+        console.log('===== 搜索结果统计 =====')
+        console.log('搜索结果数量:', searchStore.searchResults.length)
+        console.log('总结果数:', searchStore.pagination.total)
+        console.log('是否有更多:', searchStore.pagination.hasMore)
+        console.log('========================')
+        
+        // 搜索完成后更新订阅状态缓存（异步）
+        await initSubscriptionStatus();
       }, {
         errorMessage: '搜索失败，请重试'
       })
@@ -304,6 +348,8 @@ export default {
       selectedPlatforms.value = []
       // 加载所有平台的博主
       await searchStore.searchAccounts('', [], true)
+      // 更新订阅状态缓存（异步）
+      await initSubscriptionStatus();
     }
 
     // 切换平台选择
@@ -322,16 +368,16 @@ export default {
         await searchStore.searchAccounts('', selectedPlatforms.value, true)
       }
       
-      // 筛选后更新订阅状态缓存
-      initSubscriptionStatus();
+      // 筛选后更新订阅状态缓存（异步）
+      await initSubscriptionStatus();
     }
 
     // 加载更多结果
     const loadMoreResults = async () => {
       try {
         await searchStore.loadMoreResults()
-        // 加载更多后更新订阅状态缓存
-        initSubscriptionStatus();
+        // 加载更多后更新订阅状态缓存（异步）
+        await initSubscriptionStatus();
       } catch (error) {
         console.error('加载更多失败:', error)
         uni.showToast({
@@ -344,14 +390,38 @@ export default {
     // 查看博主详情
     const viewAccountDetail = (account) => {
       console.log('查看博主详情:', account)
+      const source = searchStore.currentKeyword ? 'search' : 'included'
+      // 传递source参数到博主详情页，同时传递其他新增参数
       uni.navigateTo({
-        url: `/pages/account/detail?id=${account.id}&platform=${account.platform}`
+        url: `/pages/account/detail?id=${account.id}&platform=${account.platform}&source=${source}` +
+             `&mp_name=${encodeURIComponent(account.name || '')}&avatar=${encodeURIComponent(account.avatar_url || '')}` +
+             `&mp_intro=${encodeURIComponent(account.description || '')}&mp_id=${encodeURIComponent(account.account_id || account.id || '')}`
       })
     }
 
     // 切换订阅状态
     const toggleSubscribe = async (account) => {
       try {
+        // 添加详细日志用于调试
+        console.log('======订阅操作调试======')
+        console.log('当前登录状态检查:')
+        console.log('isLoggedIn:', isLoggedIn.value)
+        console.log('authStore.isLoggedIn:', authStore.isLoggedIn)
+        
+        const userStore = useUserStore()
+        console.log('用户信息:', JSON.stringify({
+          id: userStore.userInfo.id,
+          nickname: userStore.userInfo.nickname,
+          membership_level: userStore.userInfo.membership_level
+        }))
+        console.log('Token状态:', tokenManager.getTokenStatus())
+        console.log('订阅目标账号:', JSON.stringify({
+          id: account.id,
+          platform: account.platform,
+          name: account.name
+        }))
+        console.log('==================')
+        
         // 检查用户是否已登录
         if (!isLoggedIn.value) {
           uni.showToast({
@@ -359,6 +429,29 @@ export default {
             icon: 'none'
           })
           return
+        }
+        
+        // 检查用户ID是否存在
+        if (!userStore.userInfo.id) {
+          console.error('用户ID不存在，尝试重新获取用户信息')
+          try {
+            await userStore.fetchUserProfile()
+            console.log('重新获取用户信息成功:', userStore.userInfo.id)
+            if (!userStore.userInfo.id) {
+              uni.showToast({
+                title: '用户信息加载失败，请重新登录',
+                icon: 'none'
+              })
+              return
+            }
+          } catch (profileError) {
+            console.error('重新获取用户信息失败:', profileError)
+            uni.showToast({
+              title: '用户信息加载失败，请重新登录',
+              icon: 'none'
+            })
+            return
+          }
         }
         
         // 获取当前订阅状态，使用缓存的订阅状态
@@ -369,15 +462,17 @@ export default {
           updateSubscriptionCache(account.id, false);
           // 同时更新store状态，以保持一致性
           subscriptionStore.updateLocalSubscriptionState(account.id, false)
-          // 取消订阅，确保传递平台参数
-          await subscriptionStore.unsubscribeByAccountId(account.id, account.platform)
+          // 取消订阅，确保传递平台参数和来源参数
+          const source = searchStore.currentKeyword ? 'search' : 'included'
+          await subscriptionStore.unsubscribeByAccountId(account.id, account.platform, source)
         } else {
           // 先更新本地状态缓存，使按钮立即变化
           updateSubscriptionCache(account.id, true);
           // 同时更新store状态，以保持一致性
           subscriptionStore.updateLocalSubscriptionState(account.id, true, account.platform)
-          // 创建订阅
-          await subscriptionStore.subscribeAccount(account.id, account.platform)
+          // 创建订阅，添加source参数
+          const source = searchStore.currentKeyword ? 'search' : 'included'
+          await subscriptionStore.subscribeAccount(account, source)
         }
         
         // 强制更新订阅状态视图
@@ -428,6 +523,8 @@ export default {
       return (count / 10000).toFixed(0) + 'W'
     }
 
+    // 移除诊断相关函数，但保留日志功能用于诊断
+    
     return {
       // 状态
       ...pageState.state,
@@ -454,7 +551,7 @@ export default {
       togglePlatform,
       loadMoreResults,
       viewAccountDetail,
-      isAccountSubscribed, // 使用新的高效检查方法
+      isAccountSubscribed,
       toggleSubscribe,
       clearSearch,
       getPlatformName,
@@ -872,23 +969,5 @@ export default {
   line-height: 1.5;
 }
 
-/* 响应式调整 */
-@media (max-width: 750rpx) {
-  .account-item {
-    padding: 20rpx;
-  }
-
-  .avatar-img {
-    width: 60rpx;
-    height: 60rpx;
-  }
-
-  .account-name {
-    font-size: 28rpx;
-  }
-
-  .account-desc {
-    font-size: 22rpx;
-  }
-}
+/* 删除调试按钮样式 */
 </style>

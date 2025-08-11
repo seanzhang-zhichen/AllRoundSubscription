@@ -15,6 +15,11 @@ class SubscriptionBase(BaseModel):
 class SubscriptionCreate(SubscriptionBase):
     """订阅创建模型"""
     platform: str = Field(..., description="账号平台")
+    source: str = Field(..., description="订阅来源: 搜索：search, 收录：included")
+    mp_name: Optional[str] = Field(None, description="公众号名称")
+    mp_id: Optional[str] = Field(None, description="公众号ID")
+    avatar: Optional[str] = Field(None, description="账号头像")
+    mp_intro: Optional[str] = Field(None, description="公众号介绍")
 
 
 class SubscriptionResponse(SubscriptionBase):

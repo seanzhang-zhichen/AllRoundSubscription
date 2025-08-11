@@ -363,16 +363,35 @@ class UserService:
                 "每日5次推送通知",
                 "基础内容聚合"
             ],
-            MembershipLevel.BASIC: [
+            MembershipLevel.V1: [
+                "订阅20个博主",
+                "每日10次推送通知",
+                "基础内容聚合"
+            ],
+            MembershipLevel.V2: [
                 "订阅50个博主",
                 "每日20次推送通知",
                 "高级内容聚合",
                 "优先客服支持"
             ],
-            MembershipLevel.PREMIUM: [
+            MembershipLevel.V3: [
+                "订阅100个博主",
+                "每日50次推送通知",
+                "高级内容聚合",
+                "优先客服支持"
+            ],
+            MembershipLevel.V4: [
+                "订阅300个博主",
+                "每日200次推送通知",
+                "高级内容聚合",
+                "优先客服支持",
+                "数据导出功能"
+            ],
+            MembershipLevel.V5: [
                 "无限订阅博主",
                 "无限推送通知",
                 "高级内容聚合",
+                "高级搜索功能",
                 "优先客服支持",
                 "专属功能体验",
                 "数据导出功能"

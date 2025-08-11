@@ -22,7 +22,7 @@ export const useSearchStore = defineStore('search', {
     
     // 分页信息
     pagination: {
-      page: 1,
+      page: 0, // 修改为从0开始
       size: 20,
       total: 0,
       hasMore: true
@@ -69,7 +69,7 @@ export const useSearchStore = defineStore('search', {
         const trimmedKeyword = keyword ? keyword.trim() : ''
         
         if (refresh) {
-          this.pagination.page = 1
+          this.pagination.page = 0 // 刷新时重置为0
           this.pagination.hasMore = true
         } else {
           if (!this.pagination.hasMore) {
@@ -102,6 +102,26 @@ export const useSearchStore = defineStore('search', {
         
         const response = await request.get('/search/accounts', params)
         const data = response.data || response // 处理可能的嵌套数据结构
+        
+        // 添加详细的日志打印
+        console.log('===== 后端搜索结果 =====')
+        console.log('关键词:', trimmedKeyword)
+        console.log('平台:', platforms.join(',') || '全部')
+        console.log('页码:', this.pagination.page)
+        console.log('每页数量:', this.pagination.size)
+        console.log('总结果数:', data.total)
+        console.log('返回账号数量:', (data.accounts || []).length)
+        if (data.accounts && data.accounts.length > 0) {
+          console.log('第一个结果:', {
+            id: data.accounts[0].id,
+            name: data.accounts[0].name,
+            platform: data.accounts[0].platform,
+            follower_count: data.accounts[0].follower_count
+          })
+        }
+        console.log('查询耗时:', data.search_time_ms, 'ms')
+        console.log('完整响应数据:', data)
+        console.log('========================')
         
         if (refresh) {
           this.searchResults = data.accounts || []
@@ -218,7 +238,7 @@ export const useSearchStore = defineStore('search', {
       this.currentKeyword = ''
       this.selectedPlatforms = []
       this.pagination = {
-        page: 1,
+        page: 0, // 修改为从0开始
         size: 20,
         total: 0,
         hasMore: true

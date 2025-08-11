@@ -342,12 +342,9 @@ class WeChatRSSAPI:
         Returns:
             Dict[str, Any]: 搜索结果
         """
-        start_time = time.perf_counter()
         # 确保已登录
         if not self.ensure_login():
             logger.error("未登录，无法搜索公众号")
-            end_time = time.perf_counter()
-            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {
@@ -388,6 +385,10 @@ class WeChatRSSAPI:
                     total = ret["data"].get("total", account_count)
                     
                     logger.info(f"✅ 成功搜索公众号，关键词: {keyword}，找到 {account_count} 个结果")
+
+                    print("="*100)
+                    print(ret)
+                    print("="*100)
                     
                     result["data"]["list"] = accounts
                     result["data"]["total"] = total
@@ -401,15 +402,11 @@ class WeChatRSSAPI:
                 result["success"] = False
                 logger.warning(f"❌ 搜索公众号失败: {status_code} - {response.text}")
                 
-            end_time = time.perf_counter()
-            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return result
             
         except Exception as e:
             logger.error(f"搜索公众号出错: {e}")
             logger.error(traceback.format_exc())
-            end_time = time.perf_counter()
-            logger.info(f"search_accounts耗时: {end_time - start_time:.4f}秒")
             return {
                 "success": False,
                 "data": {
@@ -747,3 +744,74 @@ class WeChatRSSAPI:
                 "article_count": article_count
             }
         }
+
+
+    def add_account(self, mp_name: str, mp_cover: Optional[str] = None, mp_id: Optional[str] = None, 
+                   avatar: Optional[str] = None, mp_intro: Optional[str] = None) -> Dict[str, Any]:
+        """添加微信公众号
+        
+        Args:
+            mp_name: 公众号名称（必填）
+            mp_cover: 公众号封面图片URL
+            mp_id: 公众号ID
+            avatar: 公众号头像URL
+            mp_intro: 公众号简介
+            
+        Returns:
+            Dict[str, Any]: 添加结果
+        """
+        # 确保已登录
+        if not self.ensure_login():
+            logger.error("未登录，无法添加公众号")
+            return {
+                "success": False,
+                "error": "未登录"
+            }
+            
+        try:
+            # 构建请求URL
+            url = f"{self.base_url}/api/v1/wx/mps"
+            
+            # 构建请求体数据，过滤掉None值
+            data = {"mp_name": mp_name}
+            if mp_cover is not None:
+                data["mp_cover"] = mp_cover
+            if mp_id is not None:
+                data["mp_id"] = mp_id
+            if avatar is not None:
+                data["avatar"] = avatar
+            if mp_intro is not None:
+                data["mp_intro"] = mp_intro
+
+            # 发送POST请求 - 使用JSON格式
+            json_headers = {"Content-Type": "application/json"}
+            # 合并授权头
+            if "Authorization" in self.headers:
+                json_headers["Authorization"] = self.headers["Authorization"]
+                
+            logger.info(f"添加公众号: POST {url} 数据: {data}")
+            response = requests.post(url, json=data, headers=json_headers)
+            status_code = response.status_code
+            
+            result = {
+                "success": True
+            }
+            
+            if 200 <= status_code < 300:
+                ret = response.json()
+                logger.info(f"✅ 成功添加公众号: {mp_name}")
+                result["data"] = ret.get("data", {})
+            else:
+                result["success"] = False
+                logger.warning(f"❌ 添加公众号失败: {status_code} - {response.text}")
+                result["error"] = f"请求失败 ({status_code})"
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"添加公众号出错: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                "success": False,
+                "error": str(e)
+            }

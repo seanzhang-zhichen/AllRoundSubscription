@@ -368,18 +368,18 @@ export default {
     // 显示会员升级
     const showMembershipUpgrade = () => {
       uni.showActionSheet({
-        itemList: ['基础会员 - ¥9.9/月', '高级会员 - ¥19.9/月'],
+        itemList: ['V1 - ¥6.9/月', 'V2 - ¥9.9/月', 'V3 - ¥14.9/月', 'V4 - ¥19.9/月', 'V5 - ¥29.9/月'],
         success: async (res) => {
-          const levels = ['basic', 'premium']
+          const levels = ['v1', 'v2', 'v3', 'v4', 'v5']
           const level = levels[res.tapIndex]
           
           uni.showModal({
             title: '确认升级',
-            content: `确定要升级到${res.tapIndex === 0 ? '基础会员' : '高级会员'}吗？`,
+            content: `确定要升级到${levels[res.tapIndex].toUpperCase()} 吗？`,
             success: async (modalRes) => {
               if (modalRes.confirm) {
                 try {
-                  await userStore.upgradeMembership(level)
+                  await userStore.upgradeMembership(level, 1)
                 } catch (error) {
                   console.error('升级失败:', error)
                 }

@@ -2,6 +2,7 @@
 搜索结果聚合器
 """
 import asyncio
+import traceback
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from app.core.logging import get_logger
@@ -23,7 +24,7 @@ class SearchAggregator:
         self,
         adapters: List[PlatformAdapter],
         keyword: str,
-        page: int = 1,
+        page: int = 0,  # 修改默认页码为0
         page_size: int = 20
     ) -> Tuple[SearchResult, Dict[str, Any]]:
         """
@@ -32,7 +33,7 @@ class SearchAggregator:
         Args:
             adapters: 平台适配器列表
             keyword: 搜索关键词
-            page: 页码
+            page: 页码（从0开始）
             page_size: 每页大小
             
         Returns:
@@ -70,6 +71,11 @@ class SearchAggregator:
         except asyncio.TimeoutError:
             logger.warning(f"搜索聚合超时: {self.timeout_seconds}秒")
             platform_results = [PlatformUnavailableException("unknown", "搜索超时")]
+
+        
+        print("platform_results: ")
+        print(platform_results)
+        print("="*100)
         
         # 处理搜索结果
         successful_results = []
@@ -105,10 +111,18 @@ class SearchAggregator:
                         "type": "PlatformSearchError"
                     })
         
+        print("successful_results: ")
+        print(successful_results)
+        print("="*100)
+        
         # 聚合成功的结果
         aggregated_result = self._aggregate_platform_results(
             successful_results, page, page_size
         )
+
+        print("aggregated_result: ")
+        print(aggregated_result)
+        print("="*100)
         
         # 添加搜索时间信息
         end_time = datetime.now()
@@ -142,6 +156,7 @@ class SearchAggregator:
             try:
                 return await adapter.search_accounts(keyword, page, page_size)
             except Exception as e:
+                traceback.print_exc()
                 logger.error(f"平台 {adapter.platform.value} 搜索异常: {str(e)}")
                 return PlatformSearchResult(
                     platform=adapter.platform.value,
@@ -174,9 +189,8 @@ class SearchAggregator:
         # 收集所有账号数据
         for result in platform_results:
             if result.success and result.accounts:
-                for account_data in result.accounts:
+                for account_response in result.accounts:
                     try:
-                        account_response = AccountResponse(**account_data)
                         all_accounts.append(account_response)
                     except Exception as e:
                         logger.warning(f"转换账号数据失败: {e}")
@@ -193,7 +207,7 @@ class SearchAggregator:
         )
         
         # 分页处理
-        start_idx = (page - 1) * page_size
+        start_idx = page * page_size
         end_idx = start_idx + page_size
         paginated_accounts = unique_accounts[start_idx:end_idx]
         

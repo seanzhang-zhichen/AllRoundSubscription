@@ -25,7 +25,7 @@ class SearchResult(BaseModel):
 class PlatformSearchResult(BaseModel):
     """平台搜索结果模型"""
     platform: str
-    accounts: List[Dict[str, Any]]
+    accounts: List[AccountResponse]
     total: int
     success: bool = True
     error_message: Optional[str] = None
@@ -56,7 +56,7 @@ class PlatformAdapter(ABC):
     async def search_accounts(
         self, 
         keyword: str, 
-        page: int = 1, 
+        page: int = 0,  # 修改默认页码为0
         page_size: int = 20
     ) -> PlatformSearchResult:
         """
@@ -64,7 +64,7 @@ class PlatformAdapter(ABC):
         
         Args:
             keyword: 搜索关键词
-            page: 页码
+            page: 页码（从0开始）
             page_size: 每页大小
             
         Returns:
@@ -111,6 +111,21 @@ class PlatformAdapter(ABC):
     async def get_account_article_stats(self, account_id: str) -> Dict[str, Any]:
         """
         获取账号文章统计信息
+        """
+        pass
+
+    @abstractmethod
+    async def add_account(self, mp_name: str, mp_cover: Optional[str] = None, mp_id: Optional[str] = None, 
+                   avatar: Optional[str] = None, mp_intro: Optional[str] = None) -> Dict[str, Any]:
+        """
+        添加公众号账号
+        """
+        pass
+
+    @abstractmethod
+    async def get_id_by_faker_id(self, faker_id: str):
+        """
+        根据faker_id查询账号的id
         """
         pass
 
@@ -179,7 +194,7 @@ class SearchServiceBase(ABC):
         self,
         keyword: str,
         platforms: Optional[List[str]] = None,
-        page: int = 1,
+        page: int = 0,
         page_size: int = 20
     ) -> SearchResult:
         """
@@ -201,7 +216,7 @@ class SearchServiceBase(ABC):
         self,
         keyword: str,
         platform: str,
-        page: int = 1,
+        page: int = 0,
         page_size: int = 20
     ) -> SearchResult:
         """

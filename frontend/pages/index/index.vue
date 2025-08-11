@@ -82,7 +82,7 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
-import { onPullDownRefresh, onReachBottom, onPageScroll, onShareAppMessage } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onReachBottom, onPageScroll, onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import Loading from '@/components/Loading.vue'
 import ContentCard from '@/components/ContentCard.vue'
@@ -278,6 +278,18 @@ export default {
       // 等待认证状态稳定后再加载数据
       await waitForAuthState()
       await initializeData()
+    })
+
+    // 页面显示时自动刷新
+    const lastRefreshTime = ref(0)
+    onShow(() => {
+      const now = Date.now()
+      // 避免频繁刷新：两次刷新至少间隔30秒
+      if (now - lastRefreshTime.value > 30000) {
+        console.log('页面显示，自动刷新内容')
+        handleRefresh()
+        lastRefreshTime.value = now
+      }
     })
 
     // 等待认证状态稳定

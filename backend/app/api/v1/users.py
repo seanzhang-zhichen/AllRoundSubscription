@@ -193,22 +193,12 @@ async def upgrade_membership(
     - **level**: 目标会员等级（basic/premium）
     - **duration_months**: 购买月数（1-12）
     
-    注意：这里只是模拟升级，实际应用中需要集成支付系统
+    注意：此接口已不再直接修改会员信息，请调用 /api/v1/payments/create 创建支付订单并在回调后自动升级。
     """
     try:
-        logger.info(f"升级会员请求，用户ID: {current_user.id}, 等级: {upgrade_data.level.value}")
-        
-        membership_info = await user_service.upgrade_membership(
-            current_user.id, 
-            upgrade_data.level, 
-            upgrade_data.duration_months, 
-            db
-        )
-        
-        return DataResponse(
-            data=membership_info,
-            message=f"会员升级成功，等级: {upgrade_data.level.value}"
-        )
+        logger.info(f"升级会员请求（将跳转到支付流程），用户ID: {current_user.id}, 等级: {upgrade_data.level.value}")
+        membership_info = await user_service.get_membership_info(current_user.id, db)
+        return DataResponse(data=membership_info, message="请调用支付创建接口完成升级")
         
     except NotFoundException as e:
         logger.error(f"用户不存在: {str(e)}")

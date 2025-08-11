@@ -13,6 +13,8 @@ from app.schemas.user import MembershipUpgrade, MembershipInfo
 from app.schemas.common import BaseResponse
 from app.core.exceptions import BusinessException, NotFoundException
 from app.core.permissions import check_membership_dependency
+from app.services.payment import payment_service
+from app.models.payment_order import PaymentChannel
 
 router = APIRouter(prefix="/membership", tags=["会员管理"])
 
@@ -38,15 +40,30 @@ async def upgrade_membership(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """升级用户会员"""
+    """升级用户会员：创建支付订单并返回前端发起支付所需参数"""
     try:
-        result = await membership_service.upgrade_membership(
-            current_user.id,
-            upgrade_data.level,
-            upgrade_data.duration_months,
-            db
+        # 解析支付渠道（兼容字符串输入）
+        try:
+            channel = PaymentChannel(upgrade_data.channel)  # type: ignore[arg-type]
+        except Exception:
+            mapping = {
+                "wechat_jsapi": PaymentChannel.WECHAT_JSAPI,
+                "wechat_miniprog": PaymentChannel.WECHAT_MINIPROG,
+                "wechat_app": PaymentChannel.WECHAT_APP,
+                "wechat_h5": PaymentChannel.WECHAT_H5,
+            }
+            channel = mapping.get((upgrade_data.channel or "wechat_miniprog").lower(), PaymentChannel.WECHAT_MINIPROG)
+
+        result = await payment_service.create_membership_order(
+            db=db,
+            user_id=current_user.id,
+            target_level=upgrade_data.level,
+            duration_months=upgrade_data.duration_months,
+            channel=channel,
+            client_ip=upgrade_data.client_ip,
+            openid=current_user.openid,
         )
-        return BaseResponse(data=result, message="会员升级成功")
+        return BaseResponse(data=result, message="订单创建成功，请发起支付")
     except NotFoundException as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except BusinessException as e:

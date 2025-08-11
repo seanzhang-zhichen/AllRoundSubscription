@@ -84,7 +84,7 @@ class SearchService(SearchServiceBase):
         keyword: str,
         platforms: Optional[List[str]] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 10
     ) -> SearchResult:
         """
         搜索账号
@@ -121,26 +121,7 @@ class SearchService(SearchServiceBase):
         target_platforms = platforms or self.get_supported_platforms()
         print(f"目标搜索平台: {target_platforms}")
         
-        if not target_platforms:
-            print("没有可用平台，执行直接数据库搜索（不限平台）")
-            # 直接执行全局搜索，不限制平台
-            result = await self._search_all_platforms_local(keyword, page, page_size)
-            
-            # 缓存结果
-            print("缓存搜索结果...")
-            await self.cache.set_search_result(
-                keyword=keyword,
-                platforms=platforms,
-                page=page,
-                page_size=page_size,
-                result=result
-            )
-            
-            print(f"【search_accounts】搜索完成，总结果数: {result.total}")
-            print("="*50 + "\n")
-            
-            return result
-        
+
         # 获取目标平台的适配器
         target_adapters = []
         for platform in target_platforms:
@@ -151,26 +132,7 @@ class SearchService(SearchServiceBase):
             else:
                 print(f"平台 {platform} 的适配器不可用")
         
-        if not target_adapters:
-            print("没有可用的平台适配器，执行本地数据库搜索")
-            # 如果有平台但没有适配器，使用本地数据库搜索这些平台
-            result = await self._fallback_to_local_search(keyword, target_platforms, page, page_size)
-            
-            # 缓存结果
-            print("缓存搜索结果...")
-            await self.cache.set_search_result(
-                keyword=keyword,
-                platforms=platforms,
-                page=page,
-                page_size=page_size,
-                result=result
-            )
-            
-            print(f"【search_accounts】搜索完成，总结果数: {result.total}")
-            print("="*50 + "\n")
-            
-            return result
-        
+
         # 使用聚合器进行多平台搜索
         try:
             print("开始执行聚合搜索...")
@@ -320,7 +282,6 @@ class SearchService(SearchServiceBase):
         Args:
             platform: 平台标识
             account_id: 平台账号ID
-            
         Returns:
             Optional[AccountResponse]: 账号信息，如果不存在返回None
         """
@@ -788,6 +749,10 @@ class SearchService(SearchServiceBase):
         platforms = list(self._adapters.keys())
         return platforms
 
+    def get_platform_display_name(self, platform: str) -> str:
+        """获取平台显示名称"""
+        return self._adapters[platform].platform_name
+
 
     async def get_articles_by_platform_id(self, platform: str, account_id: str):
         adapter = self.get_adapter(platform)
@@ -808,7 +773,6 @@ class SearchService(SearchServiceBase):
             if articles:
                 result = []  # 创建新列表存储结果
                 for article in articles:
-                    logger.info(f"""组装ArticleWithAccount返回结果： {article.title}""")
                     article_response = ArticleWithAccount(
                         id=article.id,
                         account_id=article.account_id,
@@ -857,6 +821,35 @@ class SearchService(SearchServiceBase):
                 return stats
             except Exception as e:
                 logger.error(f"从平台获取账号文章统计信息失败: {e}")
+                return None
+    
+
+    async def add_account(self, platform, mp_name: str, mp_cover: Optional[str] = None, mp_id: Optional[str] = None, 
+                   avatar: Optional[str] = None, mp_intro: Optional[str] = None) -> Optional[AccountResponse]:
+        adapter = self.get_adapter(platform)
+        if adapter and adapter.is_enabled:
+            try:
+                ret = await adapter.add_account(mp_name=mp_name, mp_id=mp_id, avatar=avatar, mp_intro=mp_intro)
+                print("====="*10)
+                print(f"添加账号返回结果: {ret}")
+                print("====="*10)
+                return ret
+            except Exception as e:
+                logger.error(f"添加账号失败: {e}")
+                return None
+    
+
+    async def get_id_by_faker_id(self, faker_id: str, platform: str):
+        """
+        根据faker_id查询账号的id
+        """
+        adapter = self.get_adapter(platform)
+        if adapter and adapter.is_enabled:
+            try:
+                ret = await adapter.get_id_by_faker_id(faker_id)
+                return ret
+            except Exception as e:
+                logger.error(f"根据faker_id查询账号的id失败: {e}")
                 return None
 
 # 创建全局搜索服务实例

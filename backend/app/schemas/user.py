@@ -69,6 +69,8 @@ class MembershipUpgrade(BaseModel):
     """会员升级模型"""
     level: MembershipLevel = Field(description="目标会员等级")
     duration_months: int = Field(ge=1, le=12, description="购买月数")
+    channel: Optional[str] = Field(default="wechat_miniprog", description="支付渠道，默认小程序")
+    client_ip: Optional[str] = Field(default=None, description="客户端IP（H5支付需要）")
     
     @validator('level')
     def validate_level(cls, v):
